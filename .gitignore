@@ -13,3 +13,5 @@ runs/
 agents/explore_agent/*/_patched_*.yaml
 /adb_runtime/
 agents/evolve_agent/skills/agent-debugger-cli/*.whl
+e2b_sandbox_harness.txt
+serper_api_key_default.txt
