@@ -15,6 +15,8 @@ llm_config:
   top_p: 0.95
   stream: true
   api_type: openai_responses
+  # gpt-5.x reasoning models reject sampling params; nexau strips these before the call.
+  additional_drop_params: ["temperature", "top_p", "frequency_penalty", "presence_penalty"]
 
 tools:
   # File operations

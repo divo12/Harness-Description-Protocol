@@ -20,7 +20,7 @@ experiment_timeout_minutes: 0    # 整个实验总时长超时
 llm:
   api_key: "${LLM_API_KEY}"
   base_url: "${LLM_BASE_URL}"
-  model: "gpt-5.4"
+  model: "gpt-5.2"
 
 harbor:
   agent: "nexau"
@@ -123,7 +123,7 @@ agent_debugger:
   llm:
     api_key: "${ADB_LLM_API_KEY}"
     base_url: "${ADB_LLM_BASE_URL}"
-    model: "gpt-5.4"
+    model: "gpt-5.2"
 
 post_evolve:
   enabled: false
