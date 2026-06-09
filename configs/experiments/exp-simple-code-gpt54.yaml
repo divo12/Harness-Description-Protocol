@@ -16,7 +16,7 @@ harbor:
 llm:
     api_key: "${GPT54_LLM_API_KEY}"
     base_url: "${GPT54_LLM_BASE_URL}"
-    model: "gpt-5.4"
+    model: "gpt-5.2"
 
 code_agent_patch:
   tool_call_mode: openai
@@ -31,7 +31,7 @@ evolve_agent:
   llm_config:
     api_key: "${GPT54_LLM_API_KEY}"
     base_url: "${GPT54_LLM_BASE_URL}"
-    model: "gpt-5.4"
+    model: "gpt-5.2"
     api_type: openai_responses
     reasoning:
       effort: "xhigh"

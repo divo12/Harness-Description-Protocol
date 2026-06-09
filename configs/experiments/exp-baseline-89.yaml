@@ -1,0 +1,22 @@
+_base: "./exp-simple-code-gpt54.yaml"
+_name: "baseline-89"
+_description: "gpt-5.2 baseline pass@1 on all 89 TB2 tasks. Iteration-1 eval = the baseline (paper's iter-0). Evolve/ADB disabled; kill after the [stats] line to skip the (unneeded) evolve step."
+_tags: ["baseline", "gpt52"]
+
+# Omit task_names → harbor runs every task in the dataset path (all 89).
+path: "./dataset/tb2-flat"
+
+max_iterations: 1
+target_pass_rate: 1.01
+
+harbor:
+  k: 1
+  n_concurrent: 16   # tier handles >=16 concurrent (build ran -j16 clean); raise later if stable
+
+# Pure baseline measurement: no analysis, no evolution.
+explore_agent:
+  enabled: false
+agent_debugger:
+  enabled: false
+notify:
+  enabled: false

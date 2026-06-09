@@ -3,15 +3,17 @@ _name: "dry-run-adb"
 _description: "Task 18 dry-run: validate Phase 2.5a populates variant_adb_overview with new open-source adb"
 _tags: ["dry-run", "adb-replacement"]
 
-# Use terminal-bench-2 directly with a single task subset
-path: "/root/dataset/terminal-bench-2"
+# Use terminal-bench-2 directly with a single task subset (flattened local layout)
+path: "./dataset/tb2-flat"
 task_names:
-  - "gcode-to-text"
-  - "break-filter-js-from-html"
+  - "fix-git"                          # easy control (should pass)
+  - "cancel-async-tasks"               # hard — likely fails → failure evidence
+  - "feal-differential-cryptanalysis"  # hard — likely fails → failure evidence
 
-# Run through iter2 so Phase 2.5a processes iter1 traces + feeds evolve agent
+# Run through iter2 so Phase 2.5a processes iter1 traces + feeds evolve agent.
+# target >1.0 so it never early-terminates → forces evolve + iter2 + attribution.
 max_iterations: 2
-target_pass_rate: 0.99
+target_pass_rate: 1.01
 
 harbor:
   k: 1
