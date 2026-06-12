@@ -70,7 +70,10 @@ def send_feishu_notification(config: dict, title: str, content: str) -> None:
     if not notify_cfg.get("enabled", True):
         return
     webhook_url = notify_cfg.get("feishu_webhook", "")
-    if not webhook_url:
+    # Skip when unset, left as an unresolved ${VAR} placeholder, or otherwise
+    # not a real http(s) URL — urllib.request.Request raises on a missing
+    # scheme, and that construction sits outside the try/except below.
+    if not webhook_url.startswith(("http://", "https://")):
         return
 
     meta_name = config.get("_meta", {}).get("_name", "unknown")
