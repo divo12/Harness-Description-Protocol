@@ -1,0 +1,87 @@
+# The AHE seed harness (agents/code_agent_simple) expressed as an HDP 0.1 document.
+# This is the bash-only NexAU seed whose gpt-5.2 baseline we measured at 62.9% floor
+# on Terminal-Bench 2 (see docs/baseline-gpt52.md). Generators targeting `nexau`
+# should reproduce agents/code_agent_simple from this document.
+hdp: "0.1"
+
+meta:
+  id: code-agent-simple
+  version: 1.0.0
+  name: NexAU seed coding agent
+  description: Deliberately minimal bash-only seed harness for AHE-style evolution.
+  base_model: gpt-5.2
+  targets: [nexau]
+  tags: [seed, terminal-bench, ahe]
+
+layers:
+  execution:
+    - id: e2b-sandbox
+      type: sandbox
+      isolation: microvm
+      backend: { kind: builtin, binding: e2b }
+      cpus: 1
+      memory_mb: 2048
+      timeout_sec: 3600
+
+  tooling:
+    - id: run-shell
+      type: tool
+      name: run_shell_command
+      description: Execute a bash command in the sandbox; the agent's only tool.
+      file: ./tooling/run-shell.tool.yaml
+      blast_radius: system
+      implementation:
+        kind: adapter
+        binding: tools.shell_tools:run_shell_command
+
+  context:
+    - id: system-rules-core
+      type: system_rules
+      file: ./context/system-rules.md
+    - id: long-term-memory
+      type: memory
+      scope: persistent
+      file: ./context/memory/long-term.md
+    - id: short-term-memory
+      type: memory
+      scope: session
+      file: ./context/memory/short-term.md
+
+  lifecycle:
+    - id: main-loop
+      type: loop
+      max_iterations: 300
+      tool_call_mode: openai
+
+  observability:
+    - id: in-memory-tracer
+      type: tracer
+      ref: { kind: builtin, import: "nexau.archs.tracer.adapters.in_memory:InMemoryTracer" }
+
+  verification:
+    - id: tb2-verifier
+      type: verifier
+      description: External Terminal-Bench 2 reward verifier (reward.txt per task).
+      trigger: external
+      on_failure: warn
+      contract:
+        reward_file: verifier/reward.txt
+        pass_value: 1
+
+governance:
+  blast_radius: system
+  evolution:
+    editable: [context, tooling, lifecycle]
+    read_only: [verification, governance, execution]
+    protected: [system-rules-core]
+  audit:
+    log_all_tool_calls: true
+
+evaluation:
+  benchmark: "terminal-bench@2.0"
+  primary_metric: pass_at_1
+  baseline: 0.629
+
+evolution:
+  manifest_dir: evolution/manifests
+  operators: [add, update, remove, narrow, gate]
