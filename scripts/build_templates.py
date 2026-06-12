@@ -57,6 +57,12 @@ from e2b.api.client.models.template_build_status import TemplateBuildStatus
 from e2b.api.client_async import get_api_client
 from e2b.connection_config import ConnectionConfig
 from e2b.template_async.build_api import check_alias_exists
+from dotenv import load_dotenv
+
+# Load .env so E2B_API_KEY (and friends) are available without manual export,
+# matching evolve.py. CLI-exported vars still win via override=False.
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+load_dotenv(PROJECT_DIR / ".env")
 
 
 # --- Tunables baked into every template ----------------------------------
@@ -142,8 +148,12 @@ def make_template_from_image(docker_image: str, nexau_packages: list[str]) -> Te
 
 def make_template_from_dockerfile(dockerfile_path: str, nexau_packages: list[str]) -> Template:
     """Seed a template from a Dockerfile sitting in the task's ``environment/`` dir."""
+    # COPY/ADD sources resolve against file_context_path; default it to the
+    # Dockerfile's own dir so `COPY data ...` finds the task's environment/
+    # files (E2B otherwise uses this script's dir, i.e. scripts/).
+    context_dir = str(Path(dockerfile_path).resolve().parent)
     tpl = (
-        Template()
+        Template(file_context_path=context_dir)
         .from_dockerfile(dockerfile_content_or_path=dockerfile_path)
         .set_user("root")
     )
