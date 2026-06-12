@@ -1,0 +1,69 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://hdp.dev/schema/0.1/change-manifest.schema.json",
+  "title": "HDP evolution change manifest",
+  "type": "object",
+  "required": ["hdp", "iteration", "changes"],
+  "additionalProperties": false,
+  "properties": {
+    "hdp": { "type": "string", "pattern": "^0\\.1$" },
+    "iteration": { "type": "integer", "minimum": 0 },
+    "author": { "type": "string" },
+    "timestamp": { "type": "string" },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["change_id", "operator", "component_id", "layer",
+                     "failure_evidence", "root_cause", "repair_spec", "prediction"],
+        "additionalProperties": false,
+        "properties": {
+          "change_id": { "type": "string" },
+          "operator": { "enum": ["add", "update", "remove", "narrow", "gate"] },
+          "component_id": { "type": "string" },
+          "layer": {
+            "enum": ["execution", "tooling", "context", "lifecycle",
+                     "observability", "verification", "governance"]
+          },
+          "summary": { "type": "string" },
+          "failure_evidence": { "type": "string" },
+          "root_cause": { "type": "string" },
+          "repair_spec": {
+            "type": "object",
+            "required": ["editable_resources", "validation_criteria"],
+            "additionalProperties": false,
+            "properties": {
+              "editable_resources": { "type": "array", "items": { "type": "string" } },
+              "forbidden_artifacts": { "type": "array", "items": { "type": "string" } },
+              "required_behaviors": { "type": "array", "items": { "type": "string" } },
+              "validation_criteria": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "prediction": {
+            "type": "object",
+            "required": ["expected_fixes", "at_risk_regressions"],
+            "additionalProperties": false,
+            "properties": {
+              "expected_fixes": { "type": "array", "items": { "type": "string" } },
+              "at_risk_regressions": { "type": "array", "items": { "type": "string" } },
+              "rationale": { "type": "string" }
+            }
+          },
+          "verdict": {
+            "enum": ["pending", "effective", "partial", "ineffective", "harmful"]
+          },
+          "result": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "fixes_verified": { "type": "array", "items": { "type": "string" } },
+              "regressions_observed": { "type": "array", "items": { "type": "string" } },
+              "unattributed_regressions": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "commit": { "type": "string" }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "hdp": "0.1",
+  "iteration": 1,
+  "author": "evolve-agent",
+  "timestamp": "2026-06-12T00:00:00Z",
+  "changes": [
+    {
+      "change_id": "chg-1",
+      "operator": "gate",
+      "component_id": "run-shell",
+      "layer": "tooling",
+      "summary": "Publish-state guard: block deletion of verified deliverable files.",
+      "failure_evidence": "Iteration-1 traces: agent deleted verified output files during post-success cleanup (cf. AHE Fig. 1 annotation 2).",
+      "root_cause": "The shell tool permits destructive operations on files the verifier has already accepted; nothing distinguishes deliverables from scratch files.",
+      "repair_spec": {
+        "editable_resources": ["tooling/run-shell.tool.yaml"],
+        "forbidden_artifacts": ["verification/*", "governance/*", "context/system-rules.md"],
+        "required_behaviors": ["non-deliverable shell behavior unchanged"],
+        "validation_criteria": [
+          "tasks failing via post-success deletion flip to pass",
+          "no regression across the full suite (system-level validation, SPEC §7.2)"
+        ]
+      },
+      "prediction": {
+        "expected_fixes": ["task-cleanup-a", "task-cleanup-b"],
+        "at_risk_regressions": ["task-tempfile-heavy"],
+        "rationale": "Guard only fires on paths the verifier has marked accepted."
+      },
+      "verdict": "pending"
+    }
+  ]
+}

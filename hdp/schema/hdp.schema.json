@@ -1,0 +1,169 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://hdp.dev/schema/0.1/hdp.schema.json",
+  "title": "Harness Definition Protocol manifest (hdp.yaml)",
+  "type": "object",
+  "required": ["hdp", "meta", "layers"],
+  "additionalProperties": false,
+  "properties": {
+    "hdp": { "type": "string", "pattern": "^0\\.1$" },
+    "meta": {
+      "type": "object",
+      "required": ["id", "version"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "base_model": { "type": "string" },
+        "authors": { "type": "array", "items": { "type": "string" } },
+        "targets": { "type": "array", "items": { "type": "string" } },
+        "tags": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "layers": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "execution":     { "type": "array", "items": { "$ref": "#/definitions/component" } },
+        "tooling":       { "type": "array", "items": { "$ref": "#/definitions/component" } },
+        "context":       { "type": "array", "items": { "$ref": "#/definitions/component" } },
+        "lifecycle":     { "type": "array", "items": { "$ref": "#/definitions/component" } },
+        "observability": { "type": "array", "items": { "$ref": "#/definitions/component" } },
+        "verification":  { "type": "array", "items": { "$ref": "#/definitions/component" } },
+        "governance":    { "type": "array", "items": { "$ref": "#/definitions/component" } }
+      }
+    },
+    "governance": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "blast_radius": { "$ref": "#/definitions/blastRadius" },
+        "evolution": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "editable":  { "type": "array", "items": { "type": "string" } },
+            "read_only": { "type": "array", "items": { "type": "string" } },
+            "protected": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "audit": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "log_all_tool_calls": { "type": "boolean" },
+            "retention_days": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "required": ["benchmark", "primary_metric"],
+      "additionalProperties": false,
+      "properties": {
+        "benchmark": { "type": "string" },
+        "primary_metric": { "type": "string" },
+        "baseline": { "type": "number" },
+        "token_budget_per_trial": { "type": "integer" }
+      }
+    },
+    "evolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "manifest_dir": { "type": "string" },
+        "operators": {
+          "type": "array",
+          "items": { "enum": ["add", "update", "remove", "narrow", "gate"] }
+        }
+      }
+    },
+    "extensions": { "type": "object" }
+  },
+  "definitions": {
+    "blastRadius": { "enum": ["read_only", "local", "session", "system", "external"] },
+    "ref": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "enum": ["mcp", "package", "path", "adapter", "builtin"] },
+        "server": { "type": "string" },
+        "package": { "type": "string" },
+        "path": { "type": "string" },
+        "binding": { "type": "string" },
+        "import": { "type": "string" }
+      }
+    },
+    "component": {
+      "type": "object",
+      "required": ["id", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+        "type": {
+          "enum": ["sandbox", "tool", "system_rules", "skill", "memory",
+                   "loop", "middleware", "sub_agent", "tracer", "verifier", "policy"]
+        },
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "file": { "type": "string" },
+        "ref": { "$ref": "#/definitions/ref" },
+
+        "schema": { "type": "object" },
+        "blast_radius": { "$ref": "#/definitions/blastRadius" },
+        "implementation": { "$ref": "#/definitions/ref" },
+
+        "hook": {
+          "enum": ["contract_injection", "skill_retrieval", "action_validation",
+                   "trajectory_regulation", "before_model", "after_model",
+                   "before_tool", "after_tool"]
+        },
+        "impl": { "$ref": "#/definitions/ref" },
+
+        "scope": { "enum": ["session", "persistent", "shared"] },
+
+        "trigger": { "enum": ["before_exit", "on_demand", "periodic", "external"] },
+        "on_failure": { "enum": ["block_exit", "warn", "retry"] },
+        "contract": { "type": "object" },
+
+        "rule": { "type": "string" },
+        "enforcement": { "enum": ["hard_block", "soft_warn", "log_only"] },
+        "applies_to": { "type": "array", "items": { "type": "string" } },
+
+        "isolation": { "enum": ["container", "microvm", "os_permission", "wasm", "none"] },
+        "backend": { "$ref": "#/definitions/ref" },
+        "cpus": { "type": "number" },
+        "memory_mb": { "type": "integer" },
+        "timeout_sec": { "type": "integer" },
+
+        "max_iterations": { "type": "integer", "minimum": 1 },
+        "tool_call_mode": { "type": "string" },
+        "stop_tools": { "type": "array", "items": { "type": "string" } },
+
+        "definition": { "$ref": "#/definitions/ref" },
+        "max_depth": { "type": "integer", "minimum": 0 },
+
+        "params": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "sub_agent" } } },
+          "then": { "required": ["max_depth"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "middleware" } } },
+          "then": { "required": ["hook"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "policy" } } },
+          "then": { "required": ["rule", "enforcement"] }
+        }
+      ]
+    }
+  }
+}
