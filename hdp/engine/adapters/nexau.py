@@ -14,14 +14,82 @@ trace) without altering harness behavior — keeping the generator score-faithfu
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from pathlib import Path
+from typing import Callable
 
 from jinja2 import Environment, FileSystemLoader
+from ruamel.yaml import YAML
 
 from hdp.engine.adapters.base import FrameworkAdapter
 from hdp.engine.core.loader import HDPDoc
 from hdp.engine.core.models import Component
+
+_BLAST_ORDER = ["read_only", "local", "session", "system", "external"]
+_SHELL_TOKENS = ("shell", "bash", "exec", "command", "terminal", "subprocess")
+
+
+def _slug(s: str | None) -> str:
+    s = s or ""
+    s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "-", s)  # split camelCase
+    s = re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+    return s or "x"
+
+
+def _one_line(text: str, limit: int = 120) -> str:
+    flat = " ".join(text.split())
+    if ". " in flat:
+        flat = flat.split(". ", 1)[0] + "."
+    return flat[:limit]
+
+
+def _has_env(s: str) -> bool:
+    return "${" in s
+
+
+def _infer_blast_radius(name: str | None, binding: str | None) -> str:
+    blob = f"{name or ''} {binding or ''}".lower()
+    if any(tok in blob for tok in _SHELL_TOKENS):
+        return "system"
+    return "session"  # conservative default; the LLM pass refines when uncertain
+
+
+def _max_blast(a: str, b: str) -> str:
+    return a if _BLAST_ORDER.index(a) >= _BLAST_ORDER.index(b) else b
+
+
+def _read_yaml(path: Path) -> dict:
+    with open(path, encoding="utf-8") as f:
+        return YAML(typ="safe").load(f) or {}
+
+
+def _write_yaml(path: Path, data: dict) -> None:
+    y = YAML()
+    y.preserve_quotes = True
+    y.width = 4096
+    y.indent(mapping=2, sequence=4, offset=2)
+    y.default_flow_style = False
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        y.dump(data, f)
+
+
+def _copy(src: Path, dest: Path) -> None:
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dest)
+
+
+def _prune_none(obj) -> None:
+    if isinstance(obj, dict):
+        for k in list(obj):
+            if obj[k] is None:
+                del obj[k]
+            else:
+                _prune_none(obj[k])
+    elif isinstance(obj, list):
+        for item in obj:
+            _prune_none(item)
 
 _ASSETS = Path(__file__).resolve().parent / "nexau_assets"
 _TEMPLATES = Path(__file__).resolve().parents[1] / "gen" / "templates"
@@ -201,5 +269,144 @@ class NexAUAdapter(FrameworkAdapter):
                 return comp
         return None
 
-    def lift(self, harness_dir: Path) -> HDPDoc:  # Phase 2
-        raise NotImplementedError("NexAUAdapter.lift lands in Phase 2 (lift)")
+    # ====================================================================== #
+    #  lift: NexAU harness -> HDP document  (Phase 2, ask #1)
+    # ====================================================================== #
+    def lift(
+        self,
+        harness_dir: Path,
+        out_dir: Path,
+        *,
+        meta_id: str | None = None,
+        version: str = "1.0.0",
+        base_model: str | None = "gpt-5.2",
+        llm: "Callable[[str], str] | None" = None,
+    ) -> HDPDoc:
+        from hdp.engine.core.loader import load
+
+        harness_dir = Path(harness_dir).resolve()
+        out_dir = Path(out_dir).resolve()
+        cfg = _read_yaml(harness_dir / "code_agent.yaml")
+
+        layers: dict[str, list] = {}
+        protected: list[str] = []
+
+        # -- context: system rules + memory (filename conventions) -------------
+        context: list[dict] = []
+        sp = cfg.get("system_prompt")
+        if isinstance(sp, str) and not sp.startswith("${"):
+            sp_src = harness_dir / sp.lstrip("./")
+            if sp_src.is_file():
+                _copy(sp_src, out_dir / "context/system-rules.md")
+                context.append({"id": "system-rules-core", "type": "system_rules",
+                                "file": "./context/system-rules.md"})
+                protected.append("system-rules-core")
+        for fname, cid, scope in (
+            ("LongTermMEMORY.md", "long-term-memory", "persistent"),
+            ("ShortTermMEMORY.md", "short-term-memory", "session"),
+        ):
+            src = harness_dir / fname
+            if src.is_file():
+                dest = f"./context/memory/{cid.replace('-memory', '')}.md"
+                _copy(src, out_dir / dest.lstrip("./"))
+                context.append({"id": cid, "type": "memory", "scope": scope, "file": dest})
+        if context:
+            layers["context"] = context
+
+        # -- tooling: one component per tool, description embedded -------------
+        tooling: list[dict] = []
+        max_blast = "read_only"
+        for entry in cfg.get("tools") or []:
+            name = entry.get("name")
+            yaml_path = entry.get("yaml_path")
+            cid = _slug(name)
+            comp: dict = {"id": cid, "type": "tool", "name": name}
+            if yaml_path and not _has_env(yaml_path):
+                tool_src = harness_dir / str(yaml_path).lstrip("./")
+                if tool_src.is_file():
+                    dest = f"./tooling/{cid}.tool.yaml"
+                    _copy(tool_src, out_dir / dest.lstrip("./"))
+                    comp["file"] = dest
+                    desc = _read_yaml(tool_src).get("description")
+                    if isinstance(desc, str):
+                        comp["description"] = _one_line(desc)
+            blast = _infer_blast_radius(name, entry.get("binding"))
+            comp["blast_radius"] = blast
+            max_blast = _max_blast(max_blast, blast)
+            if entry.get("binding"):
+                comp["implementation"] = {"kind": "adapter", "binding": entry["binding"]}
+            tooling.append(comp)
+        if tooling:
+            layers["tooling"] = tooling
+
+        # -- lifecycle: loop + any middleware ---------------------------------
+        lifecycle: list[dict] = [{
+            "id": "main-loop", "type": "loop",
+            "max_iterations": int(cfg.get("max_iterations", 300)),
+            "tool_call_mode": cfg.get("tool_call_mode", "openai"),
+        }]
+        for idx, mw in enumerate(cfg.get("middlewares") or []):
+            imp = mw.get("import")
+            lifecycle.append({
+                "id": _slug(imp.split(":")[-1]) if imp else f"middleware-{idx}",
+                "type": "middleware",
+                "hook": mw.get("hook", "before_tool"),  # ambiguous-layer: LLM refines
+                "impl": {"kind": "builtin", "import": imp} if imp else {"kind": "builtin"},
+            })
+        layers["lifecycle"] = lifecycle
+
+        # -- observability: tracers -------------------------------------------
+        observability = []
+        for tr in cfg.get("tracers") or []:
+            imp = tr.get("import")
+            if imp:
+                observability.append({
+                    "id": _slug(imp.split(":")[-1]), "type": "tracer",
+                    "ref": {"kind": "builtin", "import": imp},
+                })
+        if observability:
+            layers["observability"] = observability
+
+        # -- governance: safe defaults (SPEC §5.2) ----------------------------
+        ceiling = max_blast if max_blast != "read_only" else "session"
+        governance = {
+            "blast_radius": ceiling,
+            "evolution": {
+                "editable": ["context", "tooling", "lifecycle"],
+                "read_only": ["verification", "governance", "execution"],
+                "protected": protected,
+            },
+            "audit": {"log_all_tool_calls": ceiling in ("system", "external")},
+        }
+
+        doc_dict: dict = {
+            "hdp": "0.1",
+            "meta": {
+                "id": meta_id or _slug(harness_dir.name),
+                "version": version,
+                "name": cfg.get("name"),
+                "base_model": base_model,
+                "targets": [self.target],
+            },
+            "layers": layers,
+            "governance": governance,
+        }
+        _prune_none(doc_dict)
+
+        # Optional LLM pass fills only what structure can't give; validated below.
+        if llm is not None:
+            doc_dict = self._llm_refine(doc_dict, harness_dir, llm)
+
+        # MUST validate against the typed model before writing (SPEC conformance).
+        from hdp.engine.core.loader import HDPManifest
+        HDPManifest.model_validate(doc_dict)
+
+        out_dir.mkdir(parents=True, exist_ok=True)
+        _write_yaml(out_dir / "hdp.yaml", doc_dict)
+        return load(out_dir)
+
+    def _llm_refine(self, doc_dict: dict, harness_dir: Path, llm) -> dict:
+        """Extension point: ask an LLM to fill ambiguous fields (e.g. uncertain
+        blast_radius, middleware hook classification). Deterministic mapping already
+        handles NexAU seeds, so this is a no-op unless a refinement contract is wired."""
+        return doc_dict

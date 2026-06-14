@@ -25,5 +25,9 @@ class FrameworkAdapter(ABC):
         """
 
     @abstractmethod
-    def lift(self, harness_dir: Path) -> HDPDoc:
-        """Recover an HDP document from an existing backend harness (Phase 2)."""
+    def lift(self, harness_dir: Path, out_dir: Path) -> HDPDoc:
+        """Recover an HDP document from an existing backend harness, writing it to *out_dir*.
+
+        Deterministic structural mapping first; an optional LLM pass fills only what structure
+        can't give. The result MUST validate against the typed model before being written
+        (symmetric inverse of :meth:`generate`)."""
