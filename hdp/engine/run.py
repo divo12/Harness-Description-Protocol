@@ -85,6 +85,28 @@ def cmd_smoke(cfg: dict, dry_run: bool) -> int:
     return 0
 
 
+def cmd_gen(cfg: dict) -> int:
+    """Real generation: HDP document -> backend harness under runs/<run_id>/harness."""
+    from hdp.engine.core.loader import load
+    from hdp.engine.gen import generate
+
+    hdp_cfg = cfg.get("hdp") or {}
+    doc_path = hdp_cfg.get("document", "hdp/examples/code-agent-simple.hdp")
+    target = hdp_cfg.get("target", "nexau")
+    arm = (cfg.get("run") or {}).get("arm", "treatment")
+    seed = int((cfg.get("run") or {}).get("seed", 0))
+
+    with Run(_run_id(arm, _timestamp()), arm, seed=seed, config=cfg) as run:
+        run.set_phase("gen")
+        doc = load(doc_path)
+        out = run.dir / "harness"
+        generate(doc, out, target=target)
+        n = sum(1 for p in out.rglob("*") if p.is_file())
+        run.log("gen_files", n, phase="gen", component_id=doc.model.meta.id)
+        print(f"\ngenerated {n} files ({target}) -> {out}")
+    return 0
+
+
 def _cmd_single(cfg: dict, dry_run: bool, phase: str, fn) -> int:
     """Run one sub-command (lift/gen/evolve/bench) as a single-arm stub."""
     arm = (cfg.get("run") or {}).get("arm", "treatment")
@@ -115,8 +137,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "lift":
         return _cmd_single(cfg, dry_run, "lift", lift.smoke_step)
     if args.command == "gen":
-        return _cmd_single(cfg, dry_run, "gen", lambda r: (
-            core.smoke_step(r), adapters.smoke_step(r), gen.smoke_step(r)))
+        return cmd_gen(cfg)
     if args.command == "evolve":
         return _cmd_single(cfg, dry_run, "evolve", lambda r: (
             guard.smoke_step(r), track.smoke_step(r), attest.smoke_step(r)))
