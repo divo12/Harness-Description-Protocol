@@ -85,6 +85,26 @@ def cmd_smoke(cfg: dict, dry_run: bool) -> int:
     return 0
 
 
+def cmd_lift(cfg: dict) -> int:
+    """Real lift: backend harness -> HDP document under runs/<run_id>/lifted.hdp."""
+    from hdp.engine.lift import lift as lift_harness
+
+    hdp_cfg = cfg.get("hdp") or {}
+    harness_path = hdp_cfg.get("harness", "agents/code_agent_simple")
+    target = hdp_cfg.get("target", "nexau")
+    arm = (cfg.get("run") or {}).get("arm", "treatment")
+    seed = int((cfg.get("run") or {}).get("seed", 0))
+
+    with Run(_run_id(arm, _timestamp()), arm, seed=seed, config=cfg) as run:
+        run.set_phase("lift")
+        out = run.dir / "lifted.hdp"
+        doc = lift_harness(harness_path, out, target=target)
+        n = sum(1 for _ in doc.components())
+        run.log("lift_components", n, phase="lift", component_id=doc.model.meta.id)
+        print(f"\nlifted {n} components ({target}) -> {out}/hdp.yaml")
+    return 0
+
+
 def cmd_gen(cfg: dict) -> int:
     """Real generation: HDP document -> backend harness under runs/<run_id>/harness."""
     from hdp.engine.core.loader import load
@@ -135,7 +155,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "smoke" or args.smoke:
         return cmd_smoke(cfg, dry_run)
     if args.command == "lift":
-        return _cmd_single(cfg, dry_run, "lift", lift.smoke_step)
+        return cmd_lift(cfg)
     if args.command == "gen":
         return cmd_gen(cfg)
     if args.command == "evolve":
