@@ -1,0 +1,23 @@
+# HDP engine master config — the ONLY file a human edits to launch the engine end to end.
+# Reuses the repo's existing _base overlay mechanism: it inherits configs/base.yaml and adds
+# only an `hdp:` block (engine flags) and a `run:` block (run scope + smoke settings).
+# Existing experiments under configs/experiments/ keep working unchanged.
+_base: ../base.yaml
+
+# Engine flags. `enabled` is the treatment-arm switch (engine-local in Phase 0; Phase 5 adds
+# the same flag to configs/base.yaml so the live AHE loop can A/B on it).
+hdp:
+  enabled: true
+
+# Run scope: identifies the run, the arm, and the smoke slice.
+run:
+  run_id: null            # null -> auto: hdp-<arm>-<UTC timestamp>
+  arm: treatment          # control | treatment (for single-arm sub-commands)
+  seed: 0
+  smoke:
+    enabled: false        # forced on by `--smoke` or the `smoke` sub-command
+    max_tasks: 5          # 1-10; tiny slice for end-to-end wiring checks
+    max_iterations: 1
+    k: 1                  # rollouts per task
+    dry_run: false        # stub the harbor eval with `fake_reward` (no LLM/GPU spend)
+    fake_reward: 1.0      # pass@1 used for every arm when dry_run is on

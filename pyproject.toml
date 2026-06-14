@@ -15,6 +15,14 @@ dependencies = [
     "nexau @ git+https://github.com/nex-agi/NexAU.git@v0.3.9",
     "harbor @ git+https://github.com/Curry09/harbor-LJH.git",
     "agent_debugger_core",
+    # HDP engine (hdp/engine). Phase 0 uses only jsonschema + tqdm; the rest are
+    # declared now for Phase 1+ (core/gen/track) — see hdp/engine/__init__.py.
+    "jsonschema>=4",
+    "tqdm>=4",
+    "ruamel.yaml>=0.18",
+    "pydantic>=2",
+    "jinja2>=3",
+    "GitPython>=3",
 ]
 
 [project.scripts]
@@ -30,4 +38,8 @@ agent_debugger_core = { path = "agents/evolve_agent/skills/agent-debugger-cli/_s
 py-modules = ["evolve"]
 
 [tool.setuptools.packages.find]
-include = ["agents*"]
+include = ["agents*", "hdp*"]
+
+[dependency-groups]
+# Phase 1 codegen only: regenerate Pydantic models from hdp/schema/*.json.
+dev = ["datamodel-code-generator>=0.25"]
