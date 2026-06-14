@@ -1,0 +1,30 @@
+type: agent
+name: {{ agent_name }}
+max_context_tokens: {{ max_context_tokens }}
+system_prompt: {{ system_prompt }}
+system_prompt_type: {{ system_prompt_type }}
+tool_call_mode: {{ tool_call_mode }}
+max_iterations: {{ max_iterations }}
+
+llm_config:
+  model: ${env.LLM_MODEL}
+  base_url: ${env.LLM_BASE_URL}
+  api_key: ${env.LLM_API_KEY}
+  max_tokens: 32000
+  temperature: 0.7
+  top_p: 0.95
+  stream: true
+  api_type: openai_responses
+  # gpt-5.x reasoning models reject sampling params; nexau strips these before the call.
+  additional_drop_params: ["temperature", "top_p", "frequency_penalty", "presence_penalty"]
+
+tools:
+{% for t in tools %}
+  - name: {{ t.name }}
+    yaml_path: {{ t.yaml_path }}
+    binding: {{ t.binding }}
+{% endfor %}
+tracers:
+{% for tr in tracers %}
+  - import: {{ tr.import }}
+{% endfor %}

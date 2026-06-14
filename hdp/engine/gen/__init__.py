@@ -1,12 +1,33 @@
-"""hdp.engine.gen — Phase 1 stub (the keystone: HDPDoc → harness).
+"""hdp.engine.gen — HDP document → backend harness (the keystone).
 
-Will render code-agent-simple.hdp → a NexAU harness via Jinja2 and inject the
-``hdp.component_id`` trace tag into generated wrappers. Phase 0 exposes only a smoke step.
+``generate(doc, out_dir, target)`` dispatches to the matching framework adapter, which
+renders the harness (Jinja2 templates live under ``gen/templates/``). Faithful generation
+is the Phase 1 acceptance: ``generate(code-agent-simple.hdp)`` reproduces the NexAU seed,
+which scores the known gpt-5.2 Terminal-Bench 2 baseline.
 """
+from __future__ import annotations
+
+from pathlib import Path
+
+from hdp.engine.core.loader import HDPDoc
+
 NAME = "gen"
 PHASE = "Phase 1 (core+gen)"
 
 
+def _adapter_for(target: str):
+    from hdp.engine.adapters.nexau import NexAUAdapter
+
+    if target == "nexau":
+        return NexAUAdapter()
+    raise ValueError(f"no generator for target '{target}'")
+
+
+def generate(doc: HDPDoc, out_dir: Path | str, target: str = "nexau") -> Path:
+    """Compile *doc* into a harness under *out_dir* for *target*; return *out_dir*."""
+    return _adapter_for(target).generate(doc, Path(out_dir))
+
+
 def smoke_step(run) -> None:
-    """Stub: pretend to generate the NexAU harness from the HDP document."""
+    """Phase 0 dry-pipeline stub (the real path is :func:`generate`)."""
     run.log("gen_files", 6, phase="gen")

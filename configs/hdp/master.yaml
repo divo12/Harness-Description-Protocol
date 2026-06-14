@@ -8,6 +8,8 @@ _base: ../base.yaml
 # the same flag to configs/base.yaml so the live AHE loop can A/B on it).
 hdp:
   enabled: true
+  document: hdp/examples/code-agent-simple.hdp   # source-of-truth HDP doc
+  target: nexau                                  # backend generator
 
 # Run scope: identifies the run, the arm, and the smoke slice.
 run:
