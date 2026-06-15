@@ -94,3 +94,20 @@ The residual is the **true cost of the abstraction**, which the thesis predicts 
 6. **bench** — real treatment-vs-control table + multi-seed; the gap-list classifier.
 
 This document is the acceptance contract for phases 0–6.
+
+## Implementation status (2026-06-15)
+
+| Phase | Status |
+|---|---|
+| 0 Gate 1 identity | ✅ DONE — `test_roundtrip_identity` (3) |
+| 1 guard | ✅ DONE — PDP/PEP, `test_guard` (7) |
+| 2 track | ✅ DONE — manifest/semver/commit, `test_track` (7) |
+| 3 attest | ✅ DONE — verdicts + metrics, `test_attest` (7) |
+| 4 eval seam | ✅ DONE (mock-verified) — `hdp/engine/eval.py`, `test_eval_seam` (3) |
+| — treatment loop | ✅ DONE (end-to-end $0) — `hdp/engine/loop.py`, `test_loop` (2) |
+| 5 proposer retarget | ◑ PARTIAL — `hdp-evolution-guide` skill + `propose.py` done & tested (4); only the
+  LLM launch (`_live_runner`) is the spend-gated seam (inject `agent_runner=`) |
+| 6 bench + live A/B campaign | ⏳ SPEND-GATED — needs the live runner + real harbor eval (E2B+LLM) |
+
+49 engine tests pass; dry-run A/B smoke wires both arms. Everything verifiable without spend is
+implemented. The only remaining work is the paid live campaign (and its live runner).
