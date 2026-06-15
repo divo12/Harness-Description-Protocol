@@ -5,8 +5,9 @@ Sub-commands:  lift | gen | evolve | bench | smoke
 Driven by a master config (configs/hdp/master.yaml) that reuses the repo's existing
 ``_base:`` overlay + ``${ENV}`` substitution via :func:`evolve.load_config`. Every
 sub-command opens a :class:`hdp.engine.metrics.Run` so all metrics flow through the one
-JSONL sink. Phase 0: lift/gen/evolve/guard/track/attest are stubs; ``smoke`` wires the
-full chain across both arms and ``bench.build_table`` renders the 2-arm table.
+JSONL sink. ``lift``/``gen``/``evolve`` are real (``evolve`` drives :func:`hdp.engine.loop.evolve`
+with the retargeted evolve_agent + harbor eval); ``smoke`` still runs the stubbed 2-arm wiring
+check and ``bench.build_table`` renders the 2-arm table from JSONL.
 
 Usage:  ./scripts/hdp.sh <sub-command> [--config configs/hdp/master.yaml] [--smoke] [--dry-run]
 """
@@ -127,13 +128,36 @@ def cmd_gen(cfg: dict) -> int:
     return 0
 
 
-def _cmd_single(cfg: dict, dry_run: bool, phase: str, fn) -> int:
-    """Run one sub-command (lift/gen/evolve/bench) as a single-arm stub."""
-    arm = (cfg.get("run") or {}).get("arm", "treatment")
-    with Run(_run_id(arm, _timestamp()), arm, seed=int((cfg.get("run") or {}).get("seed", 0)),
-             config=cfg) as run:
-        run.set_phase(phase)
-        fn(run)
+def cmd_evolve(cfg: dict, dry_run: bool, *, proposer=None, eval_fn=None) -> int:
+    """Drive the real treatment-arm evolve loop (hdp.engine.loop) end to end.
+
+    ``--dry-run`` fakes only the harbor eval; the proposer (the retargeted evolve_agent) is real
+    and spends. ``proposer``/``eval_fn`` are injectable so this CLI wiring is tested without
+    nexau/E2B/LLM."""
+    from hdp.engine import loop
+    from hdp.engine.eval import eval_harness
+    from hdp.engine.propose import EvolveAgentProposer
+
+    smoke = _smoke_cfg(cfg)
+    dry_run = dry_run or bool(smoke.get("dry_run", False))
+    run_cfg = cfg.get("run") or {}
+    if dry_run or smoke.get("enabled"):
+        max_it = int(smoke.get("max_iterations", 1))
+    else:
+        max_it = int(run_cfg.get("max_iterations", cfg.get("max_iterations", 1)))
+    arm = run_cfg.get("arm", "treatment")
+    seed = int(run_cfg.get("seed", 0))
+
+    with Run(_run_id(arm, _timestamp()), arm, seed=seed, config=cfg) as run:
+        run.set_phase("evolve")
+        results = loop.evolve(
+            cfg, proposer=proposer or EvolveAgentProposer(), workdir=run.dir,
+            dry_run=dry_run, max_iterations=max_it, eval_fn=eval_fn or eval_harness, run=run,
+        )
+        print()
+        for r in results:
+            print(f"  iter {r.iteration}: pass@1={r.pass_rate}  v{r.version}  "
+                  f"guard_denied={r.guard_denied}")
     return 0
 
 
@@ -159,8 +183,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "gen":
         return cmd_gen(cfg)
     if args.command == "evolve":
-        return _cmd_single(cfg, dry_run, "evolve", lambda r: (
-            guard.smoke_step(r), track.smoke_step(r), attest.smoke_step(r)))
+        return cmd_evolve(cfg, dry_run)
     if args.command == "bench":
         return cmd_smoke(cfg, dry_run)  # Phase 0: bench == 2-arm smoke table
     return 2
