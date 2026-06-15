@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -86,3 +87,40 @@ def test_proposer_plugs_into_the_loop(tmp_path):
                           workdir=tmp_path, dry_run=True, max_iterations=1, eval_fn=eval_fn)
     assert results[0].guard_denied == 0
     assert results[0].version == "1.1.0"   # an 'add' → minor bump
+
+
+def test_setup_treatment_agent_swaps_skill(tmp_path):
+    from ruamel.yaml import YAML
+    cfg_path = propose.setup_treatment_agent(tmp_path)
+    assert cfg_path.is_file() and cfg_path.name == "evolve_agent.yaml"
+    raw = YAML().load(cfg_path.read_text())
+    assert raw["skills"] == ["./skills/hdp-evolution-guide"]          # retargeted
+    assert "nexau-evolution-guide" not in str(raw["skills"])          # not the NexAU guide
+    assert (cfg_path.parent / "skills" / "hdp-evolution-guide" / "SKILL.md").is_file()
+
+
+def test_make_live_runner_wires_launch_without_nexau(tmp_path):
+    workdir = tmp_path / "run"
+    doc_dir = workdir / "doc.hdp"
+    shutil.copytree(EXAMPLE, doc_dir)
+    doc = load(doc_dir)
+    seen: dict = {}
+
+    class FakeAgent:
+        def run(self, message, context):
+            seen.update(message=message, working_directory=context["working_directory"],
+                        iteration=context["iteration"])
+            return "ok"
+
+    def fake_factory(cfg_path):
+        seen["cfg_path"] = Path(cfg_path)
+        return FakeAgent()
+
+    runner = propose.make_live_runner(agent_factory=fake_factory)
+    out = runner(doc, "evolve please (iteration 1)", 1)
+
+    assert out == "ok"
+    assert seen["cfg_path"].name == "evolve_agent.yaml"               # retargeted config launched
+    assert Path(seen["working_directory"]) == workdir
+    assert os.environ["EVOLVE_WORK_DIR"] == str(workdir)              # file tools target the doc dir
+    assert "evolve please" in seen["message"] and seen["iteration"] == 1

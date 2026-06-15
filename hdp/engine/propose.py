@@ -14,12 +14,18 @@ This module is the loop's ``Proposer``. Two halves:
 from __future__ import annotations
 
 import json
+import os
+import shutil
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
+
+from ruamel.yaml import YAML
 
 from hdp.engine.core.loader import HDPDoc
 
 SKILL = "hdp-evolution-guide"
+EVOLVE_AGENT_DIR = Path(__file__).resolve().parents[2] / "agents" / "evolve_agent"
 
 # A runner launches the retargeted agent against *doc* with *query*; it edits doc files and
 # writes evolution/manifests/<iteration>.json. Returns the agent's free-text result (unused).
@@ -73,23 +79,60 @@ def read_manifest(doc: HDPDoc, iteration: int) -> dict:
     return json.loads(path.read_text())
 
 
-def _live_runner(doc: HDPDoc, query: str, iteration: int) -> str:
-    """The live (spend-gated) launch of the retargeted evolve_agent. Verified only in a live
-    campaign. Implementers: set EVOLVE_WORK_DIR to the run dir, register the `hdp-evolution-guide`
-    skill on the evolve_agent (in place of `nexau-evolution-guide`), set the agent's working
-    directory / workspace_path to `doc.path`, and call `agent.run(message=query, ...)` — mirroring
-    evolve.run_evolve_agent. Pass this in via `EvolveAgentProposer(agent_runner=...)`."""
-    raise NotImplementedError(
-        "live evolve_agent launch is the spend-gated seam; inject agent_runner= for a campaign "
-        "(see this function's docstring + evolve.run_evolve_agent)."
-    )
+def setup_treatment_agent(workdir: Path | str, *, src: Path = EVOLVE_AGENT_DIR) -> Path:
+    """Materialize a retargeted evolve_agent under *workdir*: copy the agent, then swap its
+    ``skills:`` from ``nexau-evolution-guide`` to ``hdp-evolution-guide`` so it gets the HDP
+    playbook (its file tools and sandbox work_dir are env-driven, so no other change is needed).
+    Returns the path to the retargeted ``evolve_agent.yaml``. $0 — no agent is launched here."""
+    dest = Path(workdir) / "evolve_agent"
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(src, dest, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    cfg_path = dest / "evolve_agent.yaml"
+    y = YAML()
+    y.preserve_quotes = True
+    raw = y.load(cfg_path.read_text())
+    raw["skills"] = [f"./skills/{SKILL}"]
+    with cfg_path.open("w", encoding="utf-8") as f:
+        y.dump(raw, f)
+    if not (dest / "skills" / SKILL / "SKILL.md").is_file():
+        raise FileNotFoundError(f"{SKILL} skill missing from {dest/'skills'}")
+    return cfg_path
+
+
+def _nexau_agent_factory(cfg_path: Path):
+    from nexau import Agent  # imported lazily so $0 paths never need nexau
+    return Agent.from_yaml(config_path=str(cfg_path))
+
+
+def make_live_runner(*, src: Path = EVOLVE_AGENT_DIR, agent_factory=_nexau_agent_factory,
+                     context_extra: dict | None = None) -> AgentRunner:
+    """Build the live (spend-gated) runner: launch the retargeted evolve_agent at the doc's
+    workdir with the HDP query. ``agent_factory`` is injectable so the launch wiring is tested
+    without nexau/LLM; the default constructs the real NexAU agent (the campaign spend point)."""
+    def runner(doc: HDPDoc, query: str, iteration: int) -> str:
+        workdir = doc.path.parent
+        cfg_path = setup_treatment_agent(workdir, src=src)
+        os.environ["EVOLVE_WORK_DIR"] = str(workdir)
+        agent = agent_factory(cfg_path)
+        result = agent.run(message=query, context={
+            "date": datetime.now().strftime("%Y-%m-%d"),
+            "working_directory": str(workdir),
+            "document": doc.path.name,
+            "iteration": iteration,
+            **(context_extra or {}),
+        })
+        if isinstance(result, tuple):
+            result = result[0] if result else ""
+        return result or ""
+    return runner
 
 
 class EvolveAgentProposer:
-    """Loop ``Proposer``: build the query, run the (injected) agent, read back its manifest."""
+    """Loop ``Proposer``: build the query, run the agent (real by default), read its manifest."""
 
-    def __init__(self, agent_runner: AgentRunner = _live_runner):
-        self.run_agent = agent_runner
+    def __init__(self, agent_runner: AgentRunner | None = None):
+        self.run_agent = agent_runner or make_live_runner()
 
     def __call__(self, doc: HDPDoc, evidence: dict, iteration: int) -> dict:
         query = build_query(doc, evidence, iteration)
