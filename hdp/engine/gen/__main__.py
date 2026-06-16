@@ -4,7 +4,6 @@ Compile an HDP document into a backend harness.
 """
 import argparse
 import sys
-from pathlib import Path
 
 from hdp.engine.core.loader import load
 from hdp.engine.gen import generate

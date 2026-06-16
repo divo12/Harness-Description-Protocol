@@ -73,7 +73,7 @@ def validate(doc_dir: Path) -> tuple[list[str], list[str]]:
         ids[cid] = layer
 
     # 3. files and path refs exist
-    for layer, comp in iter_components(manifest):
+    for _layer, comp in iter_components(manifest):
         if "file" in comp and not (doc_dir / comp["file"]).exists():
             errors.append(f"{comp['id']}: file not found: {comp['file']}")
         for key in ("ref", "implementation", "impl", "backend", "definition"):
@@ -86,7 +86,7 @@ def validate(doc_dir: Path) -> tuple[list[str], list[str]]:
     gov = manifest.get("governance") or {}
     ceiling = gov.get("blast_radius")
     if ceiling:
-        for layer, comp in iter_components(manifest):
+        for _layer, comp in iter_components(manifest):
             br = comp.get("blast_radius")
             if br and BLAST_ORDER.index(br) > BLAST_ORDER.index(ceiling):
                 errors.append(f"{comp['id']}: blast_radius '{br}' exceeds ceiling '{ceiling}'")
@@ -111,7 +111,7 @@ def validate(doc_dir: Path) -> tuple[list[str], list[str]]:
         errors.append("evolution block present but evaluation block missing (SPEC §6)")
 
     # 8. secret scan over embedded files
-    for layer, comp in iter_components(manifest):
+    for _layer, comp in iter_components(manifest):
         if "file" in comp and (doc_dir / comp["file"]).exists():
             text = (doc_dir / comp["file"]).read_text(encoding="utf-8", errors="ignore")
             for pat in SECRET_PATTERNS:

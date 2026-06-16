@@ -16,8 +16,8 @@ from __future__ import annotations
 import json
 import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from jinja2 import Environment, FileSystemLoader
 from ruamel.yaml import YAML
@@ -280,7 +280,7 @@ class NexAUAdapter(FrameworkAdapter):
         meta_id: str | None = None,
         version: str = "1.0.0",
         base_model: str | None = "gpt-5.2",
-        llm: "Callable[[str], str] | None" = None,
+        llm: Callable[[str], str] | None = None,
     ) -> HDPDoc:
         from hdp.engine.core.loader import load
 

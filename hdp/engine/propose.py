@@ -17,9 +17,9 @@ import json
 import os
 import shutil
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 from ruamel.yaml import YAML
 
@@ -54,8 +54,8 @@ def build_query(doc: HDPDoc, evidence: dict, iteration: int) -> str:
         "most specific operator, then:",
         f"1. FIRST write your change manifest to `{manifest_rel}` (operator + evidence + a "
         "falsifiable prediction, per the skill's JSON shape);",
-        f"2. then make exactly that edit to the document;",
-        f"3. validate, then call complete_task.",
+        "2. then make exactly that edit to the document;",
+        "3. validate, then call complete_task.",
         "",
         "## Governance (guard rolls back any violation)",
         f"- editable: {editable}",
@@ -147,7 +147,7 @@ def make_live_runner(cfg: dict | None = None, *, src: Path = EVOLVE_AGENT_DIR,
             sys.path.insert(0, agent_dir)
         os.environ["EVOLVE_WORK_DIR"] = str(workdir)
         if cfg.get("llm"):  # set LLM_MODEL/BASE_URL/API_KEY the evolve_agent.yaml references
-            from evolve import get_llm_config, set_llm_env
+            from ahe_control.evolve import get_llm_config, set_llm_env
             set_llm_env(get_llm_config(cfg, "evolve"))
         agent = agent_factory(cfg_path)
         result = agent.run(message=query, context={

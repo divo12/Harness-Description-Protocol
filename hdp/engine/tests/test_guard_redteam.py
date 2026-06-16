@@ -265,8 +265,8 @@ def _ver(raw):
 
 def _gov_manifest(*entries):  # entries: (component_id, layer, operator)
     return {"hdp": "0.1", "iteration": 1, "changes": [
-        {"component_id": c, "layer": l, "operator": o, "change_id": f"chg-{c}"}
-        for c, l, o in entries]}
+        {"component_id": c, "layer": lyr, "operator": o, "change_id": f"chg-{c}"}
+        for c, lyr, o in entries]}
 
 
 def _mixed(raw):

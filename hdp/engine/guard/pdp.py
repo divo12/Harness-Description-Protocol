@@ -20,9 +20,8 @@ from __future__ import annotations
 import importlib.util
 import sys
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
-from typing import Optional
 
 from hdp.engine.core.differ import diff_docs
 from hdp.engine.core.loader import HDPDoc
@@ -44,7 +43,7 @@ def _validator():
     return _v
 
 
-class Tier(str, Enum):
+class Tier(StrEnum):
     CORE = "core"
     STRUCTURAL = "structural"
     SOFT = "soft"
@@ -81,10 +80,10 @@ class Edit:
     operator: str                                   # add|update|remove|narrow|gate
     layer: str
     component_id: str
-    component: Optional[dict] = None                # new component mapping (add/update/narrow/gate)
-    embedded: Optional[dict[str, str]] = None       # rel-path -> new file content
-    remove_files: Optional[list[str]] = None        # rel-paths to delete (remove)
-    manifest: Optional[dict] = None                 # canonical change-manifest (manifest-before-edit)
+    component: dict | None = None                # new component mapping (add/update/narrow/gate)
+    embedded: dict[str, str] | None = None       # rel-path -> new file content
+    remove_files: list[str] | None = None        # rel-paths to delete (remove)
+    manifest: dict | None = None                 # canonical change-manifest (manifest-before-edit)
 
 
 # --------------------------------------------------------------------------- #

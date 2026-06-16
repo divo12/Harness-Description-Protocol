@@ -11,8 +11,8 @@ from hdp.engine.eval import eval_harness
 
 
 def test_dry_run_short_circuits_without_importing_evolve(monkeypatch):
-    # Make any attempt to import evolve explode, proving dry-run never touches it.
-    monkeypatch.setitem(sys.modules, "evolve", None)
+    # Make any attempt to import ahe_control.evolve explode, proving dry-run never touches it.
+    monkeypatch.setitem(sys.modules, "ahe_control.evolve", None)
     res = eval_harness({"harbor": {"k": 2}}, harness_dir=None, iteration_dir=None,
                        dry_run=True, fake_reward=0.629)
     assert res.pass_rate == 0.629
@@ -33,10 +33,10 @@ def test_real_path_calls_run_harbor_and_compute_stats(monkeypatch, tmp_path):
         calls["k"] = k
         return {"pass_rate": 0.77, "task_results": {"t1": 1, "t2": 0}}
 
-    fake_evolve = types.ModuleType("evolve")
+    fake_evolve = types.ModuleType("ahe_control.evolve")
     fake_evolve.run_harbor = fake_run_harbor
     fake_evolve.compute_stats = fake_compute_stats
-    monkeypatch.setitem(sys.modules, "evolve", fake_evolve)
+    monkeypatch.setitem(sys.modules, "ahe_control.evolve", fake_evolve)
 
     harness = tmp_path / "harness"
     itdir = tmp_path / "iter"

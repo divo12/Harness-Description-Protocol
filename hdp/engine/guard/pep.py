@@ -17,10 +17,11 @@ import json
 import os
 import shutil
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING
 
 from ruamel.yaml import YAML
 
@@ -35,7 +36,7 @@ if TYPE_CHECKING:  # avoid importing the metrics stack at runtime; we only call 
 class ApplyResult:
     decision: Decision
     applied: bool
-    review_dir: Optional[Path] = None  # staging kept when status == "review"
+    review_dir: Path | None = None  # staging kept when status == "review"
 
     @property
     def status(self) -> str:
@@ -105,10 +106,10 @@ def _atomic_swap(current: Path, staged: Path) -> None:
 #  audit trail + metrics (every decision/approval is traceable)
 # --------------------------------------------------------------------------- #
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
-def _change_id(edit: Edit) -> Optional[str]:
+def _change_id(edit: Edit) -> str | None:
     """The change_id of the (first) manifest entry, if a manifest was supplied."""
     changes = (edit.manifest or {}).get("changes") or []
     return changes[0].get("change_id") if changes else None
@@ -127,7 +128,7 @@ def _write_audit(doc_path: Path, event: dict) -> Path:
     return trail
 
 
-def _log(run: Optional["Run"], metric: str, change_id: Optional[str]) -> None:
+def _log(run: Run | None, metric: str, change_id: str | None) -> None:
     if run is not None:
         run.log(metric, 1, phase="evolve", change_id=change_id)
 
@@ -136,9 +137,9 @@ def apply(
     edit: Edit,
     doc: HDPDoc,
     mode: str = "enforce",
-    on_apply: Optional[Callable[[Path, Edit], None]] = None,
+    on_apply: Callable[[Path, Edit], None] | None = None,
     *,
-    run: Optional["Run"] = None,
+    run: Run | None = None,
     reviewer: str = "auto",
 ) -> ApplyResult:
     """Stage → decide → (swap | discard | hold-for-review). The sole harness write path."""
@@ -194,8 +195,8 @@ def approve(
     *,
     reviewer: str,
     reason: str,
-    on_apply: Optional[Callable[[Path, Edit], None]] = None,
-    run: Optional["Run"] = None,
+    on_apply: Callable[[Path, Edit], None] | None = None,
+    run: Run | None = None,
 ) -> ApplyResult:
     """Re-submit a quarantined (review-mode) edit through the SAME PEP after human approval.
 

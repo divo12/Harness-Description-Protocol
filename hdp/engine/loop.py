@@ -17,9 +17,10 @@ retargeted at the doc dir) drops in unchanged. The eval function is likewise inj
 from __future__ import annotations
 
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
 
 from hdp.engine import attest, guard, track
 from hdp.engine.core.loader import HDPDoc, load, save
@@ -92,7 +93,7 @@ def _failure_evidence(cfg: dict, ev: EvalResult, it_dir: Path, it: int, dry_run:
     if not tasks or all(_passed(v) for v in tasks.values()):
         return {}  # nothing failed → nothing to analyze
     try:
-        from evolve import run_parallel_adb_ask
+        from ahe_control.evolve import run_parallel_adb_ask
         k = int((cfg.get("harbor") or {}).get("k", 1))
         overview = run_parallel_adb_ask(adb_cfg, ev.job_dir, tasks, Path(it_dir), it, k=k)
         return {"analysis_overview": overview} if overview else {}

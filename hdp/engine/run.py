@@ -15,12 +15,12 @@ from __future__ import annotations
 
 import argparse
 import sys
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 
 # Reuse the repo's config loader (handles _base inheritance, deep merge, ${ENV}).
-from evolve import load_config  # type: ignore
-
+from ahe_control.evolve import load_config  # type: ignore
 from hdp.engine import adapters, attest, bench, core, gen, guard, lift, track
 from hdp.engine.metrics import Run
 
@@ -28,7 +28,7 @@ DEFAULT_CONFIG = "configs/hdp/master.yaml"
 
 
 def _timestamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _run_id(arm: str, ts: str) -> str:
@@ -54,12 +54,24 @@ def _eval_reward(cfg: dict, dry_run: bool, arm: str) -> float:
     )
 
 
+def _gen_step(r: Run) -> None:
+    core.smoke_step(r)
+    adapters.smoke_step(r)
+    gen.smoke_step(r)
+
+
+def _evolve_step(r: Run) -> None:
+    guard.smoke_step(r)
+    track.smoke_step(r)
+    attest.smoke_step(r)
+
+
 def _pipeline(run: Run, cfg: dict, dry_run: bool) -> None:
     """Full stubbed chain: lift → gen → (one evolve iter: guard/track/attest) → bench."""
-    steps = [
+    steps: list[tuple[str, Callable[[Run], None]]] = [
         ("lift", lift.smoke_step),
-        ("gen", lambda r: (core.smoke_step(r), adapters.smoke_step(r), gen.smoke_step(r))),
-        ("evolve", lambda r: (guard.smoke_step(r), track.smoke_step(r), attest.smoke_step(r))),
+        ("gen", _gen_step),
+        ("evolve", _evolve_step),
     ]
     for phase, fn in run.progress(steps, desc=f"smoke[{run.arm}]"):
         run.set_phase(phase, iteration=1 if phase == "evolve" else None)

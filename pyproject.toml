@@ -26,7 +26,7 @@ dependencies = [
 ]
 
 [project.scripts]
-agentic-harness-engineering = "evolve:main"
+agentic-harness-engineering = "ahe_control.evolve:main"
 
 [tool.uv]
 constraint-dependencies = ["claude-agent-sdk<0.1.49"]
@@ -34,12 +34,38 @@ constraint-dependencies = ["claude-agent-sdk<0.1.49"]
 [tool.uv.sources]
 agent_debugger_core = { path = "agents/evolve_agent/skills/agent-debugger-cli/_source" }
 
-[tool.setuptools]
-py-modules = ["evolve"]
-
 [tool.setuptools.packages.find]
-include = ["agents*", "hdp*"]
+include = ["hdp*", "ahe_control*", "agents*"]
 
 [dependency-groups]
 # Phase 1 codegen only: regenerate Pydantic models from hdp/schema/*.json.
-dev = ["datamodel-code-generator>=0.25"]
+dev = [
+    "datamodel-code-generator>=0.25",
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+# Legacy AHE control (ahe_control/evolve.py) predates this and is the fixed baseline; lint it for
+# real errors but don't churn its style. The HDP engine is held to the full rule set.
+# nexau_assets are verbatim copies of the seed harness, byte-compared by the gen/lift round-trip
+# tests — they must NOT be reformatted.
+extend-exclude = ["agents/**", "skills/**", "hdp/engine/adapters/nexau_assets/**"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]  # long lines are pervasive in legacy control code; not reflowing them here
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true   # nexau / harbor / e2b ship no stubs
+files = ["hdp"]                  # type-check the package we own; control is the legacy baseline
+
+# The HDP engine imports a narrow slice of the legacy AHE control at its seams; don't drag the
+# 4.7k-line baseline (or the NexAU agents) into our type check.
+[[tool.mypy.overrides]]
+module = ["ahe_control.*", "agents.*"]
+follow_imports = "skip"
+ignore_errors = true

@@ -19,9 +19,10 @@ import json
 import logging
 import re
 import subprocess
-from datetime import datetime, timezone
+from collections.abc import Iterable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Optional
+from typing import Any
 
 from tqdm import tqdm
 
@@ -32,7 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 _SECRET_KEY = re.compile(r"api[_-]?key|secret|token|password|webhook|\bkey\b", re.IGNORECASE)
@@ -75,15 +76,15 @@ class Run:
         arm: str,
         *,
         seed: int = 0,
-        config: Optional[dict] = None,
-        runs_dir: Optional[Path] = None,
+        config: dict | None = None,
+        runs_dir: Path | None = None,
         phase: str = "init",
     ) -> None:
         self.run_id = run_id
         self.arm = arm
         self.seed = seed
         self.phase = phase
-        self.iteration: Optional[int] = None
+        self.iteration: int | None = None
 
         base = Path(runs_dir) if runs_dir is not None else REPO_ROOT / "runs"
         self.dir = base / run_id
@@ -91,7 +92,7 @@ class Run:
         self.metrics_path = self.dir / "metrics.jsonl"
         self.header_path = self.dir / "run.json"
 
-        self._bar: Optional[tqdm] = None
+        self._bar: tqdm | None = None
         self._postfix: dict[str, Any] = {}
         self._header = {
             "run_id": run_id,
@@ -110,7 +111,7 @@ class Run:
             json.dumps(self._header, indent=2, default=str), encoding="utf-8"
         )
 
-    def set_phase(self, phase: str, iteration: Optional[int] = None) -> None:
+    def set_phase(self, phase: str, iteration: int | None = None) -> None:
         self.phase = phase
         if iteration is not None:
             self.iteration = iteration
@@ -121,10 +122,10 @@ class Run:
         metric: str,
         value: Any,
         *,
-        phase: Optional[str] = None,
-        iteration: Optional[int] = None,
-        component_id: Optional[str] = None,
-        change_id: Optional[str] = None,
+        phase: str | None = None,
+        iteration: int | None = None,
+        component_id: str | None = None,
+        change_id: str | None = None,
     ) -> dict:
         rec: dict[str, Any] = {
             "ts": _utc_now(),
@@ -160,14 +161,13 @@ class Run:
 
     # -- progress ---------------------------------------------------------------
     def progress(
-        self, iterable: Iterable, desc: str, total: Optional[int] = None, **postfix: Any
+        self, iterable: Iterable, desc: str, total: int | None = None, **postfix: Any
     ) -> Iterator:
         """Wrap *iterable* in a tqdm bar bound to this run's postfix."""
         self._postfix.update(postfix)
         self._bar = tqdm(iterable, desc=desc, total=total, postfix=self._postfix or None)
         try:
-            for item in self._bar:
-                yield item
+            yield from self._bar
         finally:
             self._bar.close()
             self._bar = None
@@ -177,12 +177,11 @@ class Run:
         self._header["end"] = _utc_now()
         self._write_header()
 
-    def __enter__(self) -> "Run":
+    def __enter__(self) -> Run:
         return self
 
-    def __exit__(self, *exc: object) -> bool:
+    def __exit__(self, *exc: object) -> None:
         self.close()
-        return False
 
     # -- read side (bench table is built from this, never re-derived) -----------
     @staticmethod

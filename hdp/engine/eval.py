@@ -43,7 +43,7 @@ def eval_harness(cfg: dict, harness_dir: Path | str | None, iteration_dir: Path 
         raise ValueError("eval_harness needs harness_dir and iteration_dir unless dry_run=True")
 
     # Imported lazily and locally: the seam to evolve.py lives here and nowhere else.
-    from evolve import compute_stats, run_harbor
+    from ahe_control.evolve import compute_stats, run_harbor
 
     k = int((cfg.get("harbor") or {}).get("k", 1))
     job_dir = run_harbor(cfg, Path(harness_dir), _agent_config_filename(cfg), Path(iteration_dir))

@@ -8,16 +8,18 @@ view is what gets written back, so edits keep the file's formatting.
 """
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from ruamel.yaml import YAML
+
+from .models import Component
 
 # The generated model's root class has an auto-derived name; alias it once here so the
 # rest of the engine imports a clean symbol. (Never hand-edit the generated file.)
 from .models import HarnessDefinitionProtocolManifestHdpYaml as HDPManifest
-from .models import Component
 
 LAYER_ORDER = (
     "execution", "tooling", "context", "lifecycle",

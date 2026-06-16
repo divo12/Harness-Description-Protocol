@@ -12,7 +12,7 @@ import traceback
 from collections import defaultdict
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     from nexau.archs.tracer.adapters.in_memory import InMemoryTracer
@@ -72,13 +72,13 @@ def _json_fallback(value: Any) -> str:
     return str(value)
 
 
-def coerce_observations(value: Any) -> List[Dict[str, Any]]:
+def coerce_observations(value: Any) -> list[dict[str, Any]]:
     """Best-effort normalize serialized observations into list[dict]."""
     if value is None:
         return []
 
     if isinstance(value, list):
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         for item in value:
             if isinstance(item, dict):
                 out.append(item)
@@ -124,7 +124,7 @@ def coerce_observations(value: Any) -> List[Dict[str, Any]]:
     return []
 
 
-def extract_text_from_message(msg: Dict[str, Any]) -> str:
+def extract_text_from_message(msg: dict[str, Any]) -> str:
     """Extract plain text from a message payload."""
     content = msg.get("content")
     if content is None:
@@ -162,7 +162,7 @@ def extract_reasoning_content_from_message(message: Any) -> Any:
     if not isinstance(content, list):
         return _MISSING
 
-    reasoning_items: List[Any] = []
+    reasoning_items: list[Any] = []
     for item in content:
         if not isinstance(item, dict):
             continue
@@ -229,7 +229,7 @@ def strip_trailing_tool_call(text: str) -> str:
 # OpenAI / Responses-API helpers
 # ---------------------------------------------------------------------------
 
-def _get_assistant_from_responses_api_output_items(items: Any) -> Optional[Dict[str, Any]]:
+def _get_assistant_from_responses_api_output_items(items: Any) -> dict[str, Any] | None:
     """Extract the assistant message from OpenAI Responses API output items."""
     if not isinstance(items, list):
         return None
@@ -244,7 +244,7 @@ def _get_assistant_from_responses_api_output_items(items: Any) -> Optional[Dict[
     return None
 
 
-def _get_responses_api_output_items(output: Any) -> Optional[List[Dict[str, Any]]]:
+def _get_responses_api_output_items(output: Any) -> list[dict[str, Any]] | None:
     if not isinstance(output, dict):
         return None
     items = output.get("output")
@@ -263,7 +263,7 @@ def _has_responses_api_llm_items(output: Any) -> bool:
     )
 
 
-def get_assistant_from_openai_generation_output(output: Any) -> Optional[Dict[str, Any]]:
+def get_assistant_from_openai_generation_output(output: Any) -> dict[str, Any] | None:
     """Extract an assistant message from OpenAI/Anthropic style outputs."""
     if isinstance(output, str):
         return {"role": "assistant", "content": output}
@@ -314,7 +314,7 @@ def get_assistant_from_openai_generation_output(output: Any) -> Optional[Dict[st
     return None
 
 
-def normalize_generation_input(input_obj: Any) -> Dict[str, Any]:
+def normalize_generation_input(input_obj: Any) -> dict[str, Any]:
     """Normalize generation input payload into a dict."""
     if isinstance(input_obj, dict):
         args = input_obj.get("args")
@@ -330,7 +330,7 @@ def normalize_generation_input(input_obj: Any) -> Dict[str, Any]:
     return {}
 
 
-def get_messages_from_openai_generation_input(input_obj: Any) -> List[Dict[str, Any]]:
+def get_messages_from_openai_generation_input(input_obj: Any) -> list[dict[str, Any]]:
     """Extract message list from OpenAI generation input."""
     if not isinstance(input_obj, (dict, list)):
         return []
@@ -358,7 +358,7 @@ def get_messages_from_openai_generation_input(input_obj: Any) -> List[Dict[str, 
 # Span classification & sorting
 # ---------------------------------------------------------------------------
 
-def is_llm_span(obs: Dict[str, Any]) -> bool:
+def is_llm_span(obs: dict[str, Any]) -> bool:
     """Identify spans that correspond to LLM calls."""
     span_type = (obs.get("type") or "").upper()
     span_kind = (obs.get("span_type") or "").upper()
@@ -378,7 +378,7 @@ def is_llm_span(obs: Dict[str, Any]) -> bool:
     return any(keyword in name for keyword in LLM_SPAN_NAME_KEYWORDS)
 
 
-def is_tool_span(obs: Dict[str, Any]) -> bool:
+def is_tool_span(obs: dict[str, Any]) -> bool:
     """Identify spans that correspond to tool calls."""
     name = (obs.get("name") or "").lower()
     span_kind = (obs.get("span_type") or "").upper()
@@ -387,7 +387,7 @@ def is_tool_span(obs: Dict[str, Any]) -> bool:
     return any(name.startswith(prefix) for prefix in TOOL_NAME_PREFIXES)
 
 
-def _sort_key(obs: Dict[str, Any]) -> Any:
+def _sort_key(obs: dict[str, Any]) -> Any:
     for attr in ("startTime", "start_time", "createdAt", "created_at"):
         value = obs.get(attr)
         if value is not None:
@@ -395,7 +395,7 @@ def _sort_key(obs: Dict[str, Any]) -> Any:
     return 0
 
 
-def sort_observations(observations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def sort_observations(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(observations, key=_sort_key)
 
 
@@ -403,7 +403,7 @@ def sort_observations(observations: List[Dict[str, Any]]) -> List[Dict[str, Any]
 # High-level extraction
 # ---------------------------------------------------------------------------
 
-def get_system_prompt_from_observations(observations: List[Dict[str, Any]]) -> str:
+def get_system_prompt_from_observations(observations: list[dict[str, Any]]) -> str:
     """Extract the first system prompt from an observation list."""
     for obs in sort_observations(observations):
         if not is_llm_span(obs):
@@ -453,20 +453,20 @@ def _is_subagent_tool_name(name: str) -> bool:
     return lowered.startswith("agent_") or lowered.startswith("sub-agent")
 
 
-def _is_metadata_subagent_observation(observation: Dict[str, Any]) -> bool:
+def _is_metadata_subagent_observation(observation: dict[str, Any]) -> bool:
     metadata = observation.get("metadata") or {}
     if not isinstance(metadata, dict):
         return False
     return bool(metadata.get("subagent_id")) and bool(metadata.get("controller_observation_id"))
 
 
-def build_agent_turns_from_observations(observations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def build_agent_turns_from_observations(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Build assistant turns and attach following tool calls."""
     if not observations:
         return []
 
     sorted_obs = sort_observations(observations)
-    agent_turns: List[Dict[str, Any]] = []
+    agent_turns: list[dict[str, Any]] = []
 
     index = 0
     total = len(sorted_obs)
@@ -482,7 +482,7 @@ def build_agent_turns_from_observations(observations: List[Dict[str, Any]]) -> L
             agent_text = strip_trailing_tool_call(extract_text_from_message(assistant_msg))
 
         next_index = index + 1
-        tool_calls: List[Dict[str, Any]] = []
+        tool_calls: list[dict[str, Any]] = []
         while next_index < total:
             next_obs = sorted_obs[next_index]
             if is_llm_span(next_obs):
@@ -490,7 +490,7 @@ def build_agent_turns_from_observations(observations: List[Dict[str, Any]]) -> L
 
             if is_tool_span(next_obs):
                 next_name = str(next_obs.get("name") or "")
-                tool_call: Dict[str, Any] = {
+                tool_call: dict[str, Any] = {
                     "id": next_obs.get("id"),
                     "name": next_name,
                     "type": "tool",
@@ -507,7 +507,7 @@ def build_agent_turns_from_observations(observations: List[Dict[str, Any]]) -> L
 
             next_index += 1
 
-        turn: Dict[str, Any] = {
+        turn: dict[str, Any] = {
             "role": assistant_msg["role"] if assistant_msg else "assistant",
             "content": agent_text,
             "tool_calls": tool_calls,
@@ -529,22 +529,22 @@ def build_agent_turns_from_observations(observations: List[Dict[str, Any]]) -> L
     return agent_turns
 
 
-def extract_subagents_from_observations(observations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def extract_subagents_from_observations(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Extract sub-agent trajectories from both metadata and parent/child heuristics."""
     if not observations:
         return []
 
-    children_index: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    children_index: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for observation in observations:
         parent_id = observation.get("parentObservationId") or observation.get("parent_id")
         if parent_id:
             children_index[str(parent_id)].append(observation)
 
-    subagents: List[Dict[str, Any]] = []
+    subagents: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
 
-    metadata_index: Dict[str, Dict[str, Any]] = {}
-    metadata_groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    metadata_index: dict[str, dict[str, Any]] = {}
+    metadata_groups: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for observation in sort_observations(observations):
         metadata = observation.get("metadata") or {}
         if not isinstance(metadata, dict):
@@ -635,9 +635,9 @@ def extract_subagents_from_observations(observations: List[Dict[str, Any]]) -> L
     return subagents
 
 
-def extract_tool_definitions_from_observations(observations: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def extract_tool_definitions_from_observations(observations: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Collect unique tool definitions from LLM spans."""
-    tool_definitions: List[Dict[str, Any]] = []
+    tool_definitions: list[dict[str, Any]] = []
     seen = set()
 
     for observation in observations:
@@ -661,7 +661,7 @@ def extract_tool_definitions_from_observations(observations: List[Dict[str, Any]
     return tool_definitions
 
 
-def get_first_observation_model(observations: List[Dict[str, Any]]) -> Optional[str]:
+def get_first_observation_model(observations: list[dict[str, Any]]) -> str | None:
     """Infer model name from the first LLM observation, if possible."""
     for obs in observations:
         if not is_llm_span(obs):
@@ -685,7 +685,7 @@ def get_first_observation_model(observations: List[Dict[str, Any]]) -> Optional[
     return None
 
 
-def _sum_total_tokens(observations: List[Dict[str, Any]]) -> int:
+def _sum_total_tokens(observations: list[dict[str, Any]]) -> int:
     total_tokens = 0
     for observation in observations:
         span_total_tokens = observation.get("totalTokens")
@@ -711,7 +711,7 @@ def _sum_total_tokens(observations: List[Dict[str, Any]]) -> int:
     return total_tokens
 
 
-def _sum_total_cost(observations: List[Dict[str, Any]]) -> float:
+def _sum_total_cost(observations: list[dict[str, Any]]) -> float:
     total_cost = 0.0
     for observation in observations:
         value = observation.get("calculatedTotalCost")
@@ -724,7 +724,7 @@ def _sum_total_cost(observations: List[Dict[str, Any]]) -> float:
     return total_cost
 
 
-def _normalize_observations(trace: Dict[str, Any], *, coerce_observation_payloads: bool) -> List[Dict[str, Any]]:
+def _normalize_observations(trace: dict[str, Any], *, coerce_observation_payloads: bool) -> list[dict[str, Any]]:
     observations = trace.get("observations", []) or []
     if coerce_observation_payloads:
         return coerce_observations(observations)
@@ -732,14 +732,14 @@ def _normalize_observations(trace: Dict[str, Any], *, coerce_observation_payload
 
 
 def _extract_trace_data_impl(
-    trace: Dict[str, Any],
+    trace: dict[str, Any],
     *,
     coerce_observation_payloads: bool,
     include_system_prompt_message: bool,
     include_user_message: bool,
     include_langfuse_metadata: bool,
-) -> Dict[str, Any]:
-    cleaned_trace: Dict[str, Any] = {
+) -> dict[str, Any]:
+    cleaned_trace: dict[str, Any] = {
         "id": trace.get("id") or trace.get("trace_id") or "N/A",
         "timestamp": trace.get("timestamp", "N/A"),
         "name": trace.get("name", "N/A"),
@@ -768,8 +768,8 @@ def _extract_trace_data_impl(
     tool_definitions = extract_tool_definitions_from_observations(main_observations)
     first_observation_model = get_first_observation_model(main_observations)
 
-    messages: List[Dict[str, Any]] = []
-    user_message_text: Optional[str] = None
+    messages: list[dict[str, Any]] = []
+    user_message_text: str | None = None
     if include_system_prompt_message and system_prompt:
         messages.append({"role": "system", "content": system_prompt})
     if include_user_message:
@@ -803,7 +803,7 @@ def _extract_trace_data_impl(
 
 
 def extract_trace_data(
-    trace: Dict[str, Any],
+    trace: dict[str, Any],
     *,
     coerce_observation_payloads: bool = False,
     include_system_prompt_message: bool = False,
@@ -811,7 +811,7 @@ def extract_trace_data(
     include_langfuse_metadata: bool = False,
     capture_errors: bool = False,
     jsonable_output: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Extract a cleaned trace dict from normalized observations."""
     if not capture_errors:
         cleaned_trace = _extract_trace_data_impl(
@@ -855,11 +855,11 @@ def extract_trace_data(
     return cleaned_trace
 
 
-def flatten_inmemory_spans(raw_traces: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def flatten_inmemory_spans(raw_traces: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Flatten nested InMemoryTracer spans to observation-like dicts."""
-    observations: List[Dict[str, Any]] = []
+    observations: list[dict[str, Any]] = []
 
-    def _walk(span: Dict[str, Any], parent_id: Optional[str]) -> None:
+    def _walk(span: dict[str, Any], parent_id: str | None) -> None:
         observation = {
             "id": span.get("id"),
             "name": span.get("name"),
@@ -895,7 +895,7 @@ def extract_trace_data_from_inmemory_dump(
     include_langfuse_metadata: bool = False,
     capture_errors: bool = False,
     jsonable_output: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Extract a cleaned trace dict from an InMemoryTracer dump."""
     if isinstance(raw, dict):
         if isinstance(raw.get("observations"), list):

@@ -31,8 +31,9 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-PROJECT_DIR = Path(__file__).resolve().parent
+# This module lives in ahe_control/, so the repo root is one level up from its parent.
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+ROOT_DIR = PROJECT_DIR.parent
 EVOLVE_AGENT_DIR = PROJECT_DIR / "agents" / "evolve_agent"
 EXPERIMENTS_DIR = PROJECT_DIR / "experiments"
 
@@ -277,7 +278,7 @@ def create_experiment_dir(config: dict, config_path: str, experiment_name: str |
         snapshot = {k: v for k, v in config.items() if k != "_meta"}
         with open(snapshot_path, "w", encoding="utf-8") as f:
             yaml.dump(snapshot, f, default_flow_style=False, allow_unicode=True)
-        print(f"[exp] Config snapshot saved")
+        print("[exp] Config snapshot saved")
 
     # If overlay config, also save the original overlay file
     if config.get("_meta"):
@@ -309,7 +310,7 @@ def create_experiment_dir(config: dict, config_path: str, experiment_name: str |
 def init_workspace(source_dir: Path, workspace_dir: Path) -> bool:
     """Copy from source config directory to workspace and git init. Returns whether a new initialization was performed."""
     if workspace_dir.exists() and (workspace_dir / ".git").exists():
-        print(f"[init] Workspace already exists with git history, skipping initialization")
+        print("[init] Workspace already exists with git history, skipping initialization")
         return False
 
     print(f"[init] Initializing workspace from {source_dir} to {workspace_dir}")
@@ -324,7 +325,7 @@ def init_workspace(source_dir: Path, workspace_dir: Path) -> bool:
         ["git", "commit", "-m", "v0: baseline from " + source_dir.name],
         cwd=workspace_dir, check=True, capture_output=True,
     )
-    print(f"[init] Workspace initialization complete, baseline committed")
+    print("[init] Workspace initialization complete, baseline committed")
     return True
 
 
@@ -504,7 +505,8 @@ def wait_for_harbor(proc: subprocess.Popen, iteration_dir: Path,
             proc.wait()
         job_dir = find_latest_job_dir(iteration_dir)
         if job_dir is None:
-            raise HarborJobTimeoutError(f"Harbor evaluation timeout with no completed job directory{tag}")
+            raise HarborJobTimeoutError(
+                f"Harbor evaluation timeout with no completed job directory{tag}") from None
         print(f"[eval{tag}] Using existing results after timeout: {job_dir.name}")
         return job_dir
 
@@ -1324,7 +1326,7 @@ def _build_adb_jobs(
 def _build_verifier_context(job: TaskAnalysisJob) -> str:
     """Build a concise verifier output section to include in the debugger query."""
     parts: list[str] = []
-    for i, (rv, vout) in enumerate(zip(job.trace_rewards, job.verifier_outputs), 1):
+    for i, (rv, vout) in enumerate(zip(job.trace_rewards, job.verifier_outputs, strict=False), 1):
         if not vout:
             continue
         label = "TIMEOUT" if rv < 0 else ("PASS" if rv >= 1.0 else "FAIL")
@@ -1453,7 +1455,7 @@ def _run_single_adb_ask(job: TaskAnalysisJob, config: dict, k: int = 1,
         )
         query = timeout_note + query
         # Add per-turn timing breakdown for timeout traces
-        for tp, rv in zip(job.trace_paths, job.trace_rewards):
+        for tp, rv in zip(job.trace_paths, job.trace_rewards, strict=False):
             if rv < 0:
                 timing = _extract_trace_timing(tp)
                 if timing:
@@ -1525,7 +1527,7 @@ def _run_single_adb_ask(job: TaskAnalysisJob, config: dict, k: int = 1,
                 fallback_parts.append(f"  - {fl}")
             fallback_parts.append("(Full verifier output is in the Verifier Test Output section below.)")
         if job.is_timeout or job.n_timeout > 0:
-            for tp, rv in zip(job.trace_paths, job.trace_rewards):
+            for tp, rv in zip(job.trace_paths, job.trace_rewards, strict=False):
                 if rv < 0:
                     timing = _extract_trace_timing(tp)
                     if timing:
@@ -1873,7 +1875,7 @@ def update_history_before(exp_dir: Path, iteration: int, computed_stats: dict,
     fail_tasks = sorted(t for t, r in task_results.items() if r == "fail")
     exc_tasks = sorted(t for t, r in task_results.items() if r == "exception")
 
-    lines.append(f"\n### Task Details")
+    lines.append("\n### Task Details")
     if k > 1:
         per_task_rollouts = computed_stats.get("per_task_rollouts", {})
         partial_pass_tasks = sorted(t for t in fail_tasks if per_task_rollouts.get(t, {}).get("n_pass", 0) > 0)
@@ -2085,12 +2087,12 @@ def regenerate_scores_md(exp_dir: Path, data: dict | None = None) -> None:
         task_col_seps = " | ".join("---" for _ in range(k + 1)) + " | ---"
         lines = [
             f"# {data['experiment']} Iteration Scores (k={k})\n",
-            f"| Iter | " + " | ".join(f"pass@{i}" for i in range(1, k + 1))
+            "| Iter | " + " | ".join(f"pass@{i}" for i in range(1, k + 1))
             + f" | Tasks | {task_col_headers}"
-            + f" | Trials | Trial P | Trial F | Trial E | Time |",
-            f"|------|" + " | ".join("------" for _ in range(1, k + 1))
+            + " | Trials | Trial P | Trial F | Trial E | Time |",
+            "|------|" + " | ".join("------" for _ in range(1, k + 1))
             + f" | ----- | {task_col_seps}"
-            + f" | ------ | ------ | ------ | ------ | ------|",
+            + " | ------ | ------ | ------ | ------ | ------|",
         ]
         for s in scores:
             ts = s.get("timestamp", "")[:16].replace("T", " ")
@@ -2528,7 +2530,7 @@ def rollback_experiment_metadata(exp_dir: Path, start_iteration: int) -> None:
             print(f"[resume] Removed stale change_manifest.json (no archive for iteration {prev_iter})")
     elif manifest_path.exists():
         manifest_path.unlink()
-        print(f"[resume] Removed change_manifest.json (resuming from iteration 1)")
+        print("[resume] Removed change_manifest.json (resuming from iteration 1)")
 
     # -- best_ever.json -------------------------------------------------------
     best_path = exp_dir / "best_ever.json"
@@ -2555,10 +2557,10 @@ def rollback_experiment_metadata(exp_dir: Path, start_iteration: int) -> None:
             print(f"[resume] Recalculated best_ever.json -> iteration {best['iteration']} ({best['pass_rate']:.1%})")
         elif best_path.exists():
             best_path.unlink()
-            print(f"[resume] Removed best_ever.json (no scores remaining)")
+            print("[resume] Removed best_ever.json (no scores remaining)")
     elif best_path.exists():
         best_path.unlink()
-        print(f"[resume] Removed best_ever.json (no scores file)")
+        print("[resume] Removed best_ever.json (no scores file)")
 
     print(f"[resume] Experiment metadata rolled back to before iteration {start_iteration}")
 
@@ -2666,7 +2668,7 @@ def build_evolution_query(
                     zero_pass.append(t)
             if partial_pass:
                 lines.append(f"\n#### Partial pass ({len(partial_pass)}) — high-priority targets")
-                lines.append(f"**Action required**: For each partial-pass task, read BOTH a passing and a failing rollout's `nexau_in_memory_tracer.cleaned.json`, compare where they diverge, and identify why one succeeded and the other failed.")
+                lines.append("**Action required**: For each partial-pass task, read BOTH a passing and a failing rollout's `nexau_in_memory_tracer.cleaned.json`, compare where they diverge, and identify why one succeeded and the other failed.")
                 for t, tp, total in partial_pass:
                     task_pass_at = per_task_pass_at.get(t, {})
                     pak_str = ", ".join(f"pass@{i}={task_pass_at[i]:.0%}" for i in sorted(task_pass_at)) if task_pass_at else ""
@@ -2779,11 +2781,11 @@ def build_evolution_query(
             delta = cur_rate - prev_rate
             lines.append(f"- Pass rate change: {prev_rate:.1%} -> {cur_rate:.1%} ({delta:+.1%})")
         if diff["net"] < 0:
-            lines.append(f"- ⚠️ **Net regression**: Previous iteration changes may be harmful")
+            lines.append("- ⚠️ **Net regression**: Previous iteration changes may be harmful")
 
     # -- 4. Agent Debugger Analysis --
     if adb_overview:
-        lines.append(f"\n## 4. Agent Debugger Analysis (LLM-powered root cause analysis)")
+        lines.append("\n## 4. Agent Debugger Analysis (LLM-powered root cause analysis)")
         lines.append(adb_overview)
         analyse_rel = f"runs/iteration_{iteration:03d}/input/analysis"
         lines.append(f"\nFor full per-task analysis: `read_file {analyse_rel}/detail/{{task_name}}.md`")
@@ -2792,7 +2794,7 @@ def build_evolution_query(
     # -- 5. Historical Trends --
     if scores_trend and len(scores_trend) >= 2:
         if k > 1:
-            lines.append(f"\n## 5. Historical Trends")
+            lines.append("\n## 5. Historical Trends")
             for i in range(1, k + 1):
                 pak_parts = []
                 for s in scores_trend:
@@ -2803,7 +2805,7 @@ def build_evolution_query(
                 if pak_parts:
                     lines.append(f"- pass@{i}: {' -> '.join(pak_parts)}")
         else:
-            lines.append(f"\n## 5. Historical Trends (Pass Rate)")
+            lines.append("\n## 5. Historical Trends (Pass Rate)")
             trend_parts = []
             for s in scores_trend:
                 rate = s.get("pass_rate", 0)
@@ -2812,14 +2814,14 @@ def build_evolution_query(
 
     # -- 6. Best Ever --
     if best_ever:
-        lines.append(f"\n## 6. Best Ever")
+        lines.append("\n## 6. Best Ever")
         lines.append(f"- Best pass rate: **{best_ever.get('pass_rate', best_ever.get('capability_rate', 0)):.1%}** (iteration {best_ever['iteration']})")
         if best_ever["iteration"] != iteration:
             lines.append(f"- Best version snapshot: `runs/iteration_{best_ever['iteration']:03d}/input/workspace/`")
 
     # -- 7. Task Stability --
     if stability:
-        lines.append(f"\n## 7. Task Stability Analysis (Across All Historical Iterations)")
+        lines.append("\n## 7. Task Stability Analysis (Across All Historical Iterations)")
         if stability["unstable"]:
             lines.append(f"- ⚠️ Unstable tasks ({len(stability['unstable'])}, do NOT optimize for these): {stability['unstable'][:20]}")
         if stability.get("possibly_unstable"):
@@ -2833,10 +2835,10 @@ def build_evolution_query(
     if change_evaluation:
         evals = change_evaluation.get("change_evaluations", [])
         if evals:
-            lines.append(f"\n## 8. Previous Iteration Change Attribution Report (Auto-Generated)")
-            lines.append(f"You must use this report to decide whether to rollback previous changes. HARMFUL and INEFFECTIVE changes should be prioritized for rollback.")
-            lines.append(f"\n| Change | Predicted Fixes | Actually Fixed | Regressions | Verdict | Suggested Action |")
-            lines.append(f"|--------|----------------|----------------|-------------|---------|-----------------|")
+            lines.append("\n## 8. Previous Iteration Change Attribution Report (Auto-Generated)")
+            lines.append("You must use this report to decide whether to rollback previous changes. HARMFUL and INEFFECTIVE changes should be prioritized for rollback.")
+            lines.append("\n| Change | Predicted Fixes | Actually Fixed | Regressions | Verdict | Suggested Action |")
+            lines.append("|--------|----------------|----------------|-------------|---------|-----------------|")
             for e in evals:
                 n_pred = len(e["predicted_fixes"])
                 n_fixed = len(e["actually_fixed"])
@@ -2862,7 +2864,7 @@ def build_evolution_query(
             unattr = change_evaluation.get("unattributed_regressions", [])
             if unattr:
                 lines.append(f"\n⚠️ Unattributed regression tasks: {unattr}")
-                lines.append(f"Please analyze the causes of these regressions, may be interaction effects of multiple changes")
+                lines.append("Please analyze the causes of these regressions, may be interaction effects of multiple changes")
 
             lines.append(f"\n**Rollback method**: Compare with `runs/iteration_{change_evaluation['evaluating_iteration']:03d}/input/workspace/`, "
                          f"restore files that need rollback to that version.")
@@ -2872,7 +2874,7 @@ def build_evolution_query(
         variants_data = prev_variant_comparison.get("variants", [])
         winner_idx = prev_variant_comparison.get("winner_idx", 0)
         if variants_data:
-            lines.append(f"\n## Previous Iteration Variant Experiment Results")
+            lines.append("\n## Previous Iteration Variant Experiment Results")
             lines.append(f"Last iteration tested {len(variants_data)} parallel architecture variants:\n")
             for v in variants_data:
                 vidx = v.get("idx", 0)
@@ -2904,7 +2906,7 @@ def build_evolution_query(
     lines.append("Analyze failures → group into pattern classes → design general mechanisms → implement and commit.")
     if k > 1:
         lines.append(f"**Important**: This experiment uses {k} rollouts per task. The fundamental goal is to **maximize pass@1** — the single-attempt success rate.")
-        lines.append(f"**Important**: 'Partial pass' tasks are your highest-leverage targets. Compare passing vs failing rollouts of the same task to find why one succeeded and the other failed, then make the successful strategy the reliable default. This is the fastest path to higher pass@1.")
+        lines.append("**Important**: 'Partial pass' tasks are your highest-leverage targets. Compare passing vs failing rollouts of the same task to find why one succeeded and the other failed, then make the successful strategy the reliable default. This is the fastest path to higher pass@1.")
     else:
         lines.append("**Important**: Use pass rate as the optimization target. Timed-out tasks should be analyzed — understand why the agent ran out of time.")
     lines.append("**Important**: Task classification and basic diagnostics are provided above. For deeper failed task analysis, read the corresponding `agent/nexau_in_memory_tracer.cleaned.json` in the trial directory.")
@@ -2913,15 +2915,15 @@ def build_evolution_query(
 
     # -- Workspace Path Override (Best-of-N) --
     if workspace_path and workspace_path != "workspace":
-        lines.append(f"\n## Workspace Path")
+        lines.append("\n## Workspace Path")
         lines.append(f"**Your workspace**: `{workspace_path}/` (use this path for ALL file operations on workspace files, git commands, and validation)")
 
     # -- Strategy Hint (Best-of-N) --
     if strategy_hint:
-        lines.append(f"\n## ⚠️ MANDATORY Strategy Constraint for This Variant")
-        lines.append(f"You are one of multiple parallel evolve agents. Each agent is assigned a different strategy direction.")
+        lines.append("\n## ⚠️ MANDATORY Strategy Constraint for This Variant")
+        lines.append("You are one of multiple parallel evolve agents. Each agent is assigned a different strategy direction.")
         lines.append(f"**Your assigned constraint**: {strategy_hint}")
-        lines.append(f"You MUST follow this constraint. Violations will waste this variant's exploration budget.")
+        lines.append("You MUST follow this constraint. Violations will waste this variant's exploration budget.")
 
     return "\n".join(lines)
 
@@ -2948,7 +2950,8 @@ def _unregister_tracer(key: str) -> None:
 def _dump_evolve_tracer_to_disk(tracer_key: str = "default") -> None:
     """Write current InMemoryTracer snapshot to disk in cleaned format (atomic via tmp+rename)."""
     from nexau.archs.tracer.adapters.in_memory import InMemoryTracer
-    from trace_converter import extract_trace_data_from_inmemory_dump
+
+    from ahe_control.trace_converter import extract_trace_data_from_inmemory_dump
 
     state = _evolve_tracer_states.get(tracer_key)
     if state is None:
@@ -3082,7 +3085,7 @@ def run_evolve_agent(config: dict, exp_dir: Path, iteration: int,
     save_evolve_trace(agent, evolve_log_dir, iteration, tracer_key=tracer_key)
     _unregister_tracer(tracer_key)
 
-    print(f"[evolve] Evolve agent completed", flush=True)
+    print("[evolve] Evolve agent completed", flush=True)
     return result or ""
 
 
@@ -3314,7 +3317,7 @@ def save_variant_results(iteration_dir: Path, exp_dir: Path, iteration: int,
         json.dumps(selection, indent=2, ensure_ascii=False),
         encoding="utf-8",
     )
-    print(f"[bon] Saved variant results and selection info")
+    print("[bon] Saved variant results and selection info")
 
 
 def select_variant_winner(variant_results: list[dict],
@@ -4066,7 +4069,7 @@ def run_post_evolve(config: dict, exp_dir: Path, workspace_dir: Path,
 
 def _run_explore_agent_standalone(config: dict, exp_dir: Path) -> None:
     """Run explore-agent standalone in skip_eval mode (synchronous)."""
-    from agents.explore_agent.run import run_explore_agent, register_explore_agent_skills
+    from agents.explore_agent.run import register_explore_agent_skills, run_explore_agent
 
     evolve_llm = get_llm_config(config, role="evolve")
     ml_model = config.get("explore_agent", {}).get("model") or evolve_llm["model"]
@@ -4098,8 +4101,10 @@ def _run_harbor_with_explore_agent(
     Both are fully independent: explore-agent doesn't need eval results, eval doesn't need explore-agent output.
     Evolve agent only starts after both complete (by then explore-agent skills are available).
     """
-    from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-    from agents.explore_agent.run import run_explore_agent, register_explore_agent_skills
+    from concurrent.futures import ThreadPoolExecutor
+    from concurrent.futures import TimeoutError as FuturesTimeoutError
+
+    from agents.explore_agent.run import register_explore_agent_skills, run_explore_agent
 
     ml_timeout = config.get("explore_agent", {}).get("timeout_minutes", 30)
     ml_start_time = time.monotonic()
@@ -4204,7 +4209,7 @@ def run_single_experiment(config: dict, config_path: str, experiment_name: str |
     meta_name = config.get("_meta", {}).get("_name", "")
     exp_k = int(config.get("harbor", {}).get("k", 1))
     print(f"\n{'='*60}")
-    print(f"Agentic Harness Engineering Automated Evolution System")
+    print("Agentic Harness Engineering Automated Evolution System")
     print(f"Experiment directory: {exp_dir.name}")
     if meta_name:
         print(f"Experiment name: {meta_name}")
@@ -4275,7 +4280,7 @@ def run_single_experiment(config: dict, config_path: str, experiment_name: str |
                 shutil.copytree(workspace_dir, snapshot_dir, ignore=shutil.ignore_patterns(".git"))
                 print(f"[snapshot] Backed up workspace to {snapshot_dir.relative_to(exp_dir)}")
             else:
-                print(f"[snapshot] Workspace snapshot already exists, skipping")
+                print("[snapshot] Workspace snapshot already exists, skipping")
 
             # Phase 1: Evaluation
             _phase1_start = time.monotonic()
@@ -4283,7 +4288,7 @@ def run_single_experiment(config: dict, config_path: str, experiment_name: str |
             # skip the base eval and reuse the winner's stats/job_dir directly.
             reusing_bon_winner = False
             if bon_enabled and _bon_prev_winner is not None:
-                print(f"[eval] Reusing previous iteration's Best-of-N winner results (skipping base eval)")
+                print("[eval] Reusing previous iteration's Best-of-N winner results (skipping base eval)")
                 job_dir = _bon_prev_winner["job_dir"]
                 stats = _bon_prev_winner["stats"]
                 reusing_bon_winner = True
@@ -4305,7 +4310,10 @@ def run_single_experiment(config: dict, config_path: str, experiment_name: str |
                         skip_eval = False
 
                         if iteration == 1 and ml_enabled:
-                            from agents.explore_agent.run import register_explore_agent_skills, ML_SKILL_NAMES
+                            from agents.explore_agent.run import (
+                                ML_SKILL_NAMES,
+                                register_explore_agent_skills,
+                            )
                             skills_dir = exp_dir / "evolve_agent" / "skills"
                             existing = [s for s in ML_SKILL_NAMES if (skills_dir / s / "SKILL.md").exists()]
                             if existing:
@@ -4322,7 +4330,7 @@ def run_single_experiment(config: dict, config_path: str, experiment_name: str |
                         job_dir = run_harbor(config, workspace_dir, agent_config_filename, benchmark_dir)
                 except HarborJobTimeoutError as e:
                     print(f"\n[timeout] {e}")
-                    print(f"[timeout] No available evaluation results, skipping this iteration")
+                    print("[timeout] No available evaluation results, skipping this iteration")
                     continue
 
                 # Phase 2: Statistics
@@ -4639,7 +4647,7 @@ def run_single_experiment(config: dict, config_path: str, experiment_name: str |
         cwd=workspace_dir, capture_output=True, text=True,
     )
     if git_log.stdout:
-        print(f"\nWorkspace git history:")
+        print("\nWorkspace git history:")
         print(git_log.stdout)
 
 
@@ -4657,8 +4665,8 @@ def run_batch(config_paths: list[str]) -> None:
         subprocess.run(tmux_cmd, check=True)
 
     print(f"\n[batch] Launched {len(config_paths)} experiments")
-    print(f"[batch] View: tmux ls")
-    print(f"[batch] Attach: tmux attach -t <session_name>")
+    print("[batch] View: tmux ls")
+    print("[batch] Attach: tmux attach -t <session_name>")
 
 
 def main():

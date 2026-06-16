@@ -4,6 +4,7 @@ Phase 0 ships :func:`build_table`, which builds the 2-arm comparison table ONLY 
 reading each run's ``metrics.jsonl`` (never by re-deriving numbers). Phase 5 adds the
 real per-iteration quality/cost metrics and the multi-seed driver.
 """
+from collections.abc import Sequence
 from pathlib import Path
 
 from hdp.engine.metrics import Run
@@ -27,7 +28,7 @@ def _aggregate(run_dir: Path | str) -> tuple[str | None, dict]:
     return arm, agg
 
 
-def build_table(run_dirs: list[Path | str]) -> str:
+def build_table(run_dirs: Sequence[Path | str]) -> str:
     """Render a text table comparing arms, one column per metric, from JSONL alone."""
     rows: dict[str, dict] = {}
     for d in run_dirs:
@@ -42,7 +43,7 @@ def build_table(run_dirs: list[Path | str]) -> str:
 
     def fmt_row(label: str, cells: list[str]) -> str:
         out = label.ljust(arm_w)
-        for m, cell in zip(metrics, cells):
+        for m, cell in zip(metrics, cells, strict=False):
             out += "  " + cell.ljust(col_w[m])
         return out.rstrip()
 

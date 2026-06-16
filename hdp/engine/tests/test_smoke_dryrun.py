@@ -2,9 +2,8 @@
 writes a valid metrics.jsonl + run.json per arm, and prints a 2-arm table — fast."""
 import time
 
-from hdp.engine import bench
-from hdp.engine.metrics import Run
 from hdp.engine import run as run_mod
+from hdp.engine.metrics import Run
 
 # Every engine module must log at least one metric during the smoke pipeline.
 EXPECTED_METRICS = {

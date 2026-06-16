@@ -82,7 +82,8 @@ def test_proposer_plugs_into_the_loop(tmp_path):
         return "done"
 
     cfg = {"hdp": {"document": str(EXAMPLE), "target": "nexau"}, "run": {"smoke": {"fake_reward": 1.0}}}
-    eval_fn = lambda *a, **k: EvalResult(pass_rate=1.0, stats={"task_results": {"t1": 1}})
+    def eval_fn(*a, **k):
+        return EvalResult(pass_rate=1.0, stats={"task_results": {"t1": 1}})
     results = loop.evolve(cfg, proposer=propose.EvolveAgentProposer(agent_runner=fake_runner),
                           workdir=tmp_path, dry_run=True, max_iterations=1, eval_fn=eval_fn)
     assert results[0].guard_denied == 0
