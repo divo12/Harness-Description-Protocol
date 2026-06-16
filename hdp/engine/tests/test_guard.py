@@ -32,6 +32,17 @@ def _edited(tmp_path, mutate: Callable[[object], None]) -> HDPDoc:
     return load(dst)
 
 
+def _protected_old(tmp_path) -> HDPDoc:
+    """A baseline doc that protects system-rules-core. The shipped example no longer does (it is
+    editable), so the protected-tier tests doctor it back in — the tier is what's under test."""
+    dst = tmp_path / "old.hdp"
+    shutil.copytree(EXAMPLE, dst)
+    doc = load(dst)
+    doc.raw["governance"]["evolution"]["protected"].append("system-rules-core")
+    save(doc)
+    return load(dst)
+
+
 def _ctx(raw, cid):
     return next(c for c in raw["layers"]["context"] if c["id"] == cid)
 
@@ -60,8 +71,10 @@ def test_denied_read_only_layer(old, tmp_path):
     assert "read-only" in rep.denied[0].reason
 
 
-def test_denied_protected_remove(old, tmp_path):
+def test_denied_protected_remove(tmp_path):
+    old = _protected_old(tmp_path)
     def drop_protected(raw):
+        raw["governance"]["evolution"]["protected"].append("system-rules-core")
         ctx = raw["layers"]["context"]
         ctx[:] = [c for c in ctx if c["id"] != "system-rules-core"]
     new = _edited(tmp_path, drop_protected)
@@ -113,11 +126,12 @@ def test_enforce_rolls_back_denied_keeps_allowed(old, tmp_path):
     assert new_ver.description == old_ver.description  # rolled back
 
 
-def test_enforce_restores_embedded_file_on_denied_edit(old, tmp_path):
+def test_enforce_restores_embedded_file_on_denied_edit(tmp_path):
     # Regression (found by the live smoke): a denied edit whose change lives entirely in the
     # embedded FILE (here: the protected system-rules.md) must be restored, not just the manifest.
+    old = _protected_old(tmp_path)
     new_dir = tmp_path / "new.hdp"
-    shutil.copytree(EXAMPLE, new_dir)
+    shutil.copytree(old.path, new_dir)  # same protected baseline; then tamper the embedded file
     (new_dir / "context" / "system-rules.md").write_text("TAMPERED BY AGENT", encoding="utf-8")
     new = load(new_dir)
 

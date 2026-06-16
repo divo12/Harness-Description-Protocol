@@ -1,0 +1,9 @@
+# HDP live A/B — treatment arm (ATOMIC guard engine). Same as ab-overfull.yaml but the
+# guard is all-or-nothing (any violation reverts the whole edit). The reconcile-vs-atomic ablation.
+_base: ./ab-overfull.yaml
+_name: hdp-ab-overfull-atomic
+_description: "HDP treatment (atomic) — overfull-hbox x3 iters, real eval + ADB."
+
+hdp:
+  guard:
+    engine: atomic

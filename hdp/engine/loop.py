@@ -44,10 +44,21 @@ class IterationResult:
     manifest: dict
 
 
+def _passed(status) -> bool:
+    """True iff a per-task result counts as a pass. eval's task_results are status strings
+    ("pass"|"fail"|"exception"); tolerate numeric rewards too for stub-driven tests."""
+    if isinstance(status, str):
+        return status.strip().lower() == "pass"
+    try:
+        return float(status) >= 1
+    except (TypeError, ValueError):
+        return False
+
+
 def _flips(prev: dict, cur: dict) -> tuple[set[str], set[str]]:
-    """(flipped fail→pass, regressed pass→fail) between two per-task reward maps."""
-    flipped = {t for t, v in cur.items() if float(v) >= 1 and float(prev.get(t, 0)) < 1}
-    regressed = {t for t, v in cur.items() if float(v) < 1 and float(prev.get(t, 0)) >= 1}
+    """(flipped fail→pass, regressed pass→fail) between two per-task result maps."""
+    flipped = {t for t, v in cur.items() if _passed(v) and not _passed(prev.get(t))}
+    regressed = {t for t, v in cur.items() if not _passed(v) and _passed(prev.get(t))}
     return flipped, regressed
 
 
@@ -78,7 +89,7 @@ def _failure_evidence(cfg: dict, ev: EvalResult, it_dir: Path, it: int, dry_run:
     if dry_run or not adb_cfg.get("enabled") or ev.job_dir is None:
         return {}
     tasks = ev.task_results
-    if not tasks or all(float(v) >= 1 for v in tasks.values()):
+    if not tasks or all(_passed(v) for v in tasks.values()):
         return {}  # nothing failed → nothing to analyze
     try:
         from evolve import run_parallel_adb_ask

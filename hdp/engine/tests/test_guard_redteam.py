@@ -105,7 +105,10 @@ def test_dry_decide_allows_without_touching_tree(tmp_path):
 #  CORE denials (non-overridable) — tree must stay byte-identical
 # --------------------------------------------------------------------------- #
 def test_core_protected_component_denied(tmp_path):
-    d = _doc(tmp_path)
+    # The shipped example no longer protects system-rules-core (it is editable now), so doctor a
+    # doc that does — the protected tier is what's under test, not the example's policy choice.
+    d = _doctor(tmp_path / "code-agent-simple.hdp",
+                lambda r: r["governance"]["evolution"]["protected"].append("system-rules-core"))
     before = _tree_hash(d)
     edit = Edit(operator="update", layer="context", component_id="system-rules-core",
                 embedded={"context/system-rules.md": "tampered\n"},
@@ -222,7 +225,8 @@ def test_review_quarantines_then_approve_applies(tmp_path):
 
 
 def test_review_core_violation_still_hardblocks(tmp_path):
-    d = _doc(tmp_path)
+    d = _doctor(tmp_path / "code-agent-simple.hdp",
+                lambda r: r["governance"]["evolution"]["protected"].append("system-rules-core"))
     before = _tree_hash(d)
     edit = Edit(operator="update", layer="context", component_id="system-rules-core",
                 embedded={"context/system-rules.md": "tampered\n"},

@@ -4,7 +4,10 @@ max_context_tokens: 200000
 system_prompt: ./system_prompt.md
 system_prompt_type: jinja
 tool_call_mode: openai
-max_iterations: 25
+# Capped from 25: with a reasoning model (gpt-5.2) a 25-turn agentic loop over-explores and
+# blows the per-task timeout. 10 turns is plenty to read the trace + a couple of files and
+# call complete_task; bounding it makes adb finish (or fail) fast instead of hanging 600s.
+max_iterations: 10
 
 llm_config:
   model: ${env.LLM_MODEL}
@@ -14,6 +17,10 @@ llm_config:
   temperature: 0.4
   stream: false
   api_type: ${env.LLM_API_TYPE}
+  # Low effort keeps each turn fast and pushes the model to commit to complete_task instead of
+  # endlessly reasoning. Overridden by `adb config` llm.reasoning when supplied.
+  reasoning:
+    effort: low
   additional_drop_params: ["temperature", "top_p", "frequency_penalty", "presence_penalty"]
 
 sandbox_config:

@@ -419,7 +419,10 @@ def _build_harbor_cmd(config: dict, workspace_dir: Path, agent_config_filename: 
         "--jobs-dir", str(iteration_dir),
     ]
 
-    if k > 1:
+    # Always pin -k (even k=1): without it harbor defaults to >1 rollouts, and the agent-debugger
+    # ask call (`adb ask -t <traces...>`) fails on multiple traces ("ask payload missing string
+    # answer"). Pinning k=1 → one trace per task → reliable adb root-cause analysis.
+    if k >= 1:
         cmd.extend(["-k", str(k)])
 
     if task_path:
@@ -1328,12 +1331,13 @@ def _build_verifier_context(job: TaskAnalysisJob) -> str:
         # For passing traces, skip verbose verifier output
         if rv >= 1.0:
             continue
-        # Extract just the pytest summary / assertion failures (last ~60 lines)
+        # Keep only the signal lines (FAILED/ERROR/assert/Error) — a reasoning-model QA agent
+        # chokes on a 60-line raw pytest dump (over-investigates, blows the timeout, or returns
+        # non-JSON). The failing test names + assertions are what pin the root cause.
         lines = vout.strip().splitlines()
-        if len(lines) > 60:
-            vout_truncated = "\n".join(lines[-60:])
-        else:
-            vout_truncated = vout.strip()
+        signal = [ln for ln in lines
+                  if any(k in ln for k in ("FAILED", "ERROR", "assert", "Error", "Exception"))]
+        vout_truncated = "\n".join((signal or lines)[:15])
         parts.append(
             f"--- Verifier test output (rollout {i}, {label}) ---\n"
             f"{vout_truncated}\n"

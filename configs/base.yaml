@@ -115,7 +115,8 @@ agent_debugger:
   enabled: true
   max_concurrent: 16            # 并行 adb ask 进程数（1 个 task = 1 个进程，含该 task 所有 rollout 轨迹）
   max_tasks: 90                  # 最多分析几个 task（debug 优先，summary 排后）
-  timeout_per_task: 600          # 单个 task 的 adb ask 超时（秒），含 QA agent 多轮对话
+  timeout_per_task: 240          # adb ask 超时（秒）。从 600 降低：QA agent 现在被限制为 10 轮 + 短查询，
+                                 # 240s 足够完成；若仍超时则快速降级到 verifier 证据，而非空转 10 分钟。
   retry_attempts: 3              # 每个 task 内 adb ask 失败时的重试次数（含首次）
   retry_backoff_seconds: 2.0     # 首次重试前等待秒数，之后指数翻倍（与 NexAU LLMCaller 类似）
 
@@ -124,6 +125,25 @@ agent_debugger:
     api_key: "${ADB_LLM_API_KEY}"
     base_url: "${ADB_LLM_BASE_URL}"
     model: "gpt-5.2"
+    reasoning:                   # gpt-5.2 是推理模型：低 effort 让每轮更快、促使其尽快 complete_task。
+      effort: low
+
+  # Short, direct QA queries. The default templates invite a heavy multi-turn investigation that a
+  # reasoning model (gpt-5.2) over-runs (timeout) or ends without emitting the strict-JSON answer.
+  # The trace is already loaded in the agent's context — ask it to answer immediately and finish.
+  qa_query_debug_k1: |
+    This task's single rollout FAILED. {trace_labels}
+    The trace is already loaded. Verifier failures (the real external result) are listed below.
+    Do NOT investigate files extensively — answer directly from the trace and call complete_task now.
+    Give, concisely (<120 words total):
+    1. ROOT CAUSE: the single action in the trace that caused the failure (cite the message index).
+    2. HARNESS FIX: the one structural change (a system-rule, tool tweak, or memory note) that would
+       prevent this class of failure.
+  qa_query_summary_k1: |
+    This task's single rollout PASSED. {trace_labels}
+    The trace is already loaded. Answer directly and call complete_task now.
+    Give, concisely (<80 words): the key strategy that made it succeed and one reusable behavioral
+    pattern other tasks could adopt.
 
 post_evolve:
   enabled: false

@@ -1,0 +1,47 @@
+# HDP live A/B — treatment arm (reconcile guard engine) on overfull-hbox, 3 iterations.
+# overfull-hbox: easy/debugging, fails at the gpt-5.2 baseline -> room to improve.
+# Inherits gpt-5.2 settings; ADB enabled so the proposer gets real failure evidence.
+_base: ../experiments/exp-simple-code-gpt54.yaml
+_name: hdp-ab-overfull-reconcile
+_description: "HDP treatment (reconcile) — overfull-hbox x3 iters, real eval + ADB."
+
+hdp:
+  enabled: true
+  document: hdp/examples/code-agent-simple.hdp
+  harness: agents/code_agent_simple
+  target: nexau
+  guard:
+    engine: reconcile          # per-delta rollback (mine); atomic arm overrides this
+
+path: ./dataset/tb2-flat
+task_names: [overfull-hbox]
+harbor:
+  k: 1
+  n_concurrent: 1
+
+run:
+  arm: treatment
+  seed: 0
+  smoke:
+    enabled: true
+    max_iterations: 3
+    dry_run: false
+    fake_reward: 0.0
+
+# Fast reasoning + generous timeout so the proposer doesn't stall.
+evolve_agent:
+  llm_config:
+    reasoning:
+      effort: "low"
+    timeout: 600
+
+agent_debugger:
+  enabled: true
+  max_concurrent: 1
+  max_tasks: 2
+  timeout_per_task: 240
+  retry_attempts: 3
+explore_agent:
+  enabled: false
+notify:
+  enabled: false
