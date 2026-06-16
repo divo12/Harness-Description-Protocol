@@ -8,12 +8,13 @@ what bench runs) and routed to human review in ``review`` mode.
 from __future__ import annotations
 
 from hdp.engine.guard.pdp import Decision, Edit, Tier, Violation, decide
-from hdp.engine.guard.pep import ApplyResult, apply
+from hdp.engine.guard.pep import ApplyResult, apply, approve, dry_decide
 
 NAME = "guard"
 PHASE = "Phase 3 (guard)"
 
-__all__ = ["Decision", "Edit", "Tier", "Violation", "decide", "ApplyResult", "apply",
+__all__ = ["Decision", "Edit", "Tier", "Violation", "decide",
+           "ApplyResult", "apply", "approve", "dry_decide",
            "mode_from_config", "smoke_step"]
 
 
