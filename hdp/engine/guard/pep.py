@@ -13,17 +13,22 @@ The working tree is never left partial: the swap is two renames with restore-on-
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Optional
 
 from ruamel.yaml import YAML
 
 from hdp.engine.core.loader import HDPDoc, load
 from hdp.engine.guard.pdp import Decision, Edit, Tier, Violation, decide
+
+if TYPE_CHECKING:  # avoid importing the metrics stack at runtime; we only call run.log()
+    from hdp.engine.metrics import Run
 
 
 @dataclass
@@ -96,19 +101,55 @@ def _atomic_swap(current: Path, staged: Path) -> None:
     shutil.rmtree(backup, ignore_errors=True)
 
 
+# --------------------------------------------------------------------------- #
+#  audit trail + metrics (every decision/approval is traceable)
+# --------------------------------------------------------------------------- #
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _change_id(edit: Edit) -> Optional[str]:
+    """The change_id of the (first) manifest entry, if a manifest was supplied."""
+    changes = (edit.manifest or {}).get("changes") or []
+    return changes[0].get("change_id") if changes else None
+
+
+def _write_audit(doc_path: Path, event: dict) -> Path:
+    """Append a first-class audit event to ``evolution/audit.jsonl`` in the (changed) tree.
+
+    Only called when the tree is changing (allow / approve), so it never violates the
+    tree-unchanged guarantee that holds on deny and review.
+    """
+    trail = doc_path / "evolution" / "audit.jsonl"
+    trail.parent.mkdir(parents=True, exist_ok=True)
+    with trail.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(event, default=str) + "\n")
+    return trail
+
+
+def _log(run: Optional["Run"], metric: str, change_id: Optional[str]) -> None:
+    if run is not None:
+        run.log(metric, 1, phase="evolve", change_id=change_id)
+
+
 def apply(
     edit: Edit,
     doc: HDPDoc,
     mode: str = "enforce",
     on_apply: Optional[Callable[[Path, Edit], None]] = None,
+    *,
+    run: Optional["Run"] = None,
+    reviewer: str = "auto",
 ) -> ApplyResult:
     """Stage → decide → (swap | discard | hold-for-review). The sole harness write path."""
     staged = _stage(edit, doc)
+    cid = _change_id(edit)
 
     try:
         new_doc = load(staged)
     except Exception as exc:  # malformed staged document is unloadable -> structural deny
         shutil.rmtree(staged, ignore_errors=True)
+        _log(run, "guard_denied", cid)
         return ApplyResult(
             Decision("deny", [Violation(Tier.STRUCTURAL, "load", str(exc))]), applied=False
         )
@@ -117,12 +158,65 @@ def apply(
 
     if decision.status == "allow":
         _atomic_swap(doc.path, staged)
+        _write_audit(doc.path, {"change_id": cid, "reviewer": reviewer,
+                                "decision": "allow", "reason": "", "ts": _now()})
+        _log(run, "guard_allowed", cid)
         if on_apply is not None:
             on_apply(doc.path, edit)
         return ApplyResult(decision, applied=True)
 
     if decision.status == "review":
+        _log(run, "guard_review", cid)
         return ApplyResult(decision, applied=False, review_dir=staged)
 
     shutil.rmtree(staged, ignore_errors=True)
+    _log(run, "guard_denied", cid)
     return ApplyResult(decision, applied=False)
+
+
+def dry_decide(edit: Edit, doc: HDPDoc, mode: str = "enforce") -> Decision:
+    """Decide *edit* against *doc* without ever touching the working tree (stage → decide → discard)."""
+    staged = _stage(edit, doc)
+    try:
+        try:
+            new_doc = load(staged)
+        except Exception as exc:
+            return Decision("deny", [Violation(Tier.STRUCTURAL, "load", str(exc))])
+        return decide(edit, doc, new_doc, mode=mode)
+    finally:
+        shutil.rmtree(staged, ignore_errors=True)
+
+
+def approve(
+    doc: HDPDoc,
+    edit: Edit,
+    review_dir: Path,
+    *,
+    reviewer: str,
+    reason: str,
+    on_apply: Optional[Callable[[Path, Edit], None]] = None,
+    run: Optional["Run"] = None,
+) -> ApplyResult:
+    """Re-submit a quarantined (review-mode) edit through the SAME PEP after human approval.
+
+    The confinement core is non-overridable: full validation is re-run, and any CORE/STRUCTURAL
+    violation still hard-blocks regardless of the approval. Only when no CORE/STRUCTURAL
+    violation remains (the SOFT rule being overridden) does the staged copy swap into place,
+    emitting a first-class audit event ``{change_id, reviewer, decision, reason, ts}``.
+    """
+    cid = _change_id(edit)
+    new_doc = load(review_dir)
+    decision = decide(edit, doc, new_doc, mode="review")
+    blocking = [v for v in decision.violations if v.tier in (Tier.CORE, Tier.STRUCTURAL)]
+    if blocking:  # confinement core can never be promoted by a human
+        shutil.rmtree(review_dir, ignore_errors=True)
+        _log(run, "guard_denied", cid)
+        return ApplyResult(Decision("deny", blocking), applied=False)
+
+    _atomic_swap(doc.path, review_dir)
+    _write_audit(doc.path, {"change_id": cid, "reviewer": reviewer,
+                            "decision": "approved", "reason": reason, "ts": _now()})
+    _log(run, "guard_review_approved", cid)
+    if on_apply is not None:
+        on_apply(doc.path, edit)
+    return ApplyResult(Decision("allow", decision.violations), applied=True)
