@@ -195,6 +195,15 @@ def enforce(old: HDPDoc, new: HDPDoc, manifest: dict | None = None,
                     seq[idx] = old_item
                 else:
                     seq.append(old_item)
+            # the denied change may live entirely in the embedded FILE (not the manifest entry)
+            # — restore the old file content too, else the rollback is only half done.
+            old_comp = old.component(d.component_id)
+            if old_comp is not None and old_comp.file:
+                content = old.read_embedded(old_comp)
+                if content is not None:
+                    dest = new.path / old_comp.file
+                    dest.parent.mkdir(parents=True, exist_ok=True)
+                    dest.write_text(content, encoding="utf-8", newline="")
         if not seq and d.layer in raw.get("layers", {}):
             del raw["layers"][d.layer]
     # governance self-edit denied → restore OLD governance block wholesale.

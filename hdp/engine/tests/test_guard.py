@@ -111,3 +111,18 @@ def test_enforce_rolls_back_denied_keeps_allowed(old, tmp_path):
     old_ver = old.component("tb2-verifier")
     assert new_mem.description == "allowed note"
     assert new_ver.description == old_ver.description  # rolled back
+
+
+def test_enforce_restores_embedded_file_on_denied_edit(old, tmp_path):
+    # Regression (found by the live smoke): a denied edit whose change lives entirely in the
+    # embedded FILE (here: the protected system-rules.md) must be restored, not just the manifest.
+    new_dir = tmp_path / "new.hdp"
+    shutil.copytree(EXAMPLE, new_dir)
+    (new_dir / "context" / "system-rules.md").write_text("TAMPERED BY AGENT", encoding="utf-8")
+    new = load(new_dir)
+
+    reconciled, rep = guard.enforce(old, new, m("system-rules-core", "update"))
+
+    assert not rep.ok and rep.denied[0].component_id == "system-rules-core"  # protected
+    assert (reconciled.path / "context" / "system-rules.md").read_text() == \
+           (old.path / "context" / "system-rules.md").read_text()           # file restored

@@ -1,0 +1,44 @@
+# HDP treatment-arm live smoke — real evolve_agent proposer on the example doc.
+# Inherits the gpt-5.2 settings (llm + code_agent_patch + evolve_agent patch with
+# api_type: openai_responses + reasoning) so the retargeted evolve_agent runs on gpt-5.2.
+# Starts with dry_run: true (real proposer, FAKE eval — cheapest). Flip dry_run to false
+# for a real harbor eval on the task slice below.
+_base: ../experiments/exp-simple-code-gpt54.yaml
+_name: hdp-smoke
+_description: "HDP treatment-arm live smoke (real proposer)."
+
+hdp:
+  enabled: true
+  document: hdp/examples/code-agent-simple.hdp
+  harness: agents/code_agent_simple
+  target: nexau
+
+# Real-eval target (only used when dry_run: false): local flattened dataset, one easy task.
+path: ./dataset/tb2-flat
+task_names: [fix-git]
+harbor:
+  k: 1
+  n_concurrent: 1
+
+run:
+  arm: treatment
+  seed: 0
+  smoke:
+    enabled: true
+    max_iterations: 1
+    dry_run: true
+    fake_reward: 0.629
+
+# Smoke: fast reasoning + generous client timeout so the proposer doesn't stall on xhigh.
+evolve_agent:
+  llm_config:
+    reasoning:
+      effort: "low"
+    timeout: 600
+
+explore_agent:
+  enabled: false
+agent_debugger:
+  enabled: false
+notify:
+  enabled: false

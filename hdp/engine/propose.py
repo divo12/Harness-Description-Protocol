@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Callable
@@ -39,12 +40,22 @@ def build_query(doc: HDPDoc, evidence: dict, iteration: int) -> str:
     editable = ", ".join(evo.editable or []) if evo else "(unset)"
     read_only = ", ".join(evo.read_only or []) if evo else "(unset)"
     protected = ", ".join(evo.protected or []) if evo else "(none)"
+    docname = doc.path.name  # e.g. "doc.hdp" — your file tools are rooted at the run dir
+    manifest_rel = f"{docname}/evolution/manifests/{iteration:03d}.json"
     lines = [
         f"# HDP evolution — iteration {iteration}",
         "",
-        f"Improve the agent by editing its HDP document at `{doc.path}`. Follow the "
-        f"`{SKILL}` skill exactly: pick ONE highest-leverage failure, choose the most specific "
-        "operator, write the manifest entry FIRST (with a falsifiable prediction), then edit.",
+        f"Improve the agent by editing its HDP document. Your file tools are rooted at this run "
+        f"directory; the document is the `{docname}/` subdirectory (manifest at "
+        f"`{docname}/hdp.yaml`, embedded content under `{docname}/context/`, `{docname}/tooling/`, "
+        "etc.). Use these RELATIVE paths with your file tools.",
+        "",
+        f"Follow the `{SKILL}` skill exactly: pick ONE highest-leverage improvement, choose the "
+        "most specific operator, then:",
+        f"1. FIRST write your change manifest to `{manifest_rel}` (operator + evidence + a "
+        "falsifiable prediction, per the skill's JSON shape);",
+        f"2. then make exactly that edit to the document;",
+        f"3. validate, then call complete_task.",
         "",
         "## Governance (guard rolls back any violation)",
         f"- editable: {editable}",
@@ -79,11 +90,21 @@ def read_manifest(doc: HDPDoc, iteration: int) -> dict:
     return json.loads(path.read_text())
 
 
-def setup_treatment_agent(workdir: Path | str, *, src: Path = EVOLVE_AGENT_DIR) -> Path:
-    """Materialize a retargeted evolve_agent under *workdir*: copy the agent, then swap its
-    ``skills:`` from ``nexau-evolution-guide`` to ``hdp-evolution-guide`` so it gets the HDP
-    playbook (its file tools and sandbox work_dir are env-driven, so no other change is needed).
-    Returns the path to the retargeted ``evolve_agent.yaml``. $0 — no agent is launched here."""
+def _deep_merge(into: dict, patch: dict | None) -> None:
+    for k, v in (patch or {}).items():
+        if isinstance(v, dict) and isinstance(into.get(k), dict):
+            _deep_merge(into[k], v)
+        else:
+            into[k] = v
+
+
+def setup_treatment_agent(workdir: Path | str, *, src: Path = EVOLVE_AGENT_DIR,
+                          evolve_patch: dict | None = None) -> Path:
+    """Materialize a retargeted evolve_agent under *workdir*: copy the agent, swap its ``skills:``
+    from ``nexau-evolution-guide`` to ``hdp-evolution-guide``, and deep-merge *evolve_patch* (the
+    config's ``evolve_agent`` block — e.g. gpt-5.2's ``api_type: openai_responses`` + reasoning,
+    without which gpt-5.x rejects ``max_tokens`` on chat-completions). Returns the retargeted
+    ``evolve_agent.yaml`` path. $0 — no agent is launched here."""
     dest = Path(workdir) / "evolve_agent"
     if dest.exists():
         shutil.rmtree(dest)
@@ -93,6 +114,7 @@ def setup_treatment_agent(workdir: Path | str, *, src: Path = EVOLVE_AGENT_DIR) 
     y.preserve_quotes = True
     raw = y.load(cfg_path.read_text())
     raw["skills"] = [f"./skills/{SKILL}"]
+    _deep_merge(raw, evolve_patch)
     with cfg_path.open("w", encoding="utf-8") as f:
         y.dump(raw, f)
     if not (dest / "skills" / SKILL / "SKILL.md").is_file():
@@ -102,18 +124,31 @@ def setup_treatment_agent(workdir: Path | str, *, src: Path = EVOLVE_AGENT_DIR) 
 
 def _nexau_agent_factory(cfg_path: Path):
     from nexau import Agent  # imported lazily so $0 paths never need nexau
-    return Agent.from_yaml(config_path=str(cfg_path))
+    return Agent.from_yaml(config_path=Path(cfg_path))  # nexau expects a Path (calls .exists())
 
 
-def make_live_runner(*, src: Path = EVOLVE_AGENT_DIR, agent_factory=_nexau_agent_factory,
+def make_live_runner(cfg: dict | None = None, *, src: Path = EVOLVE_AGENT_DIR,
+                     agent_factory=_nexau_agent_factory,
                      context_extra: dict | None = None) -> AgentRunner:
     """Build the live (spend-gated) runner: launch the retargeted evolve_agent at the doc's
-    workdir with the HDP query. ``agent_factory`` is injectable so the launch wiring is tested
-    without nexau/LLM; the default constructs the real NexAU agent (the campaign spend point)."""
+    workdir with the HDP query. Applies the config's ``evolve_agent`` patch + sets the
+    ``${env.LLM_*}`` the agent reads (mirrors evolve.run_evolve_agent). ``agent_factory`` is
+    injectable so the launch wiring is tested without nexau/LLM; the default builds the real
+    NexAU agent (the campaign spend point)."""
+    cfg = cfg or {}
+
     def runner(doc: HDPDoc, query: str, iteration: int) -> str:
         workdir = doc.path.parent
-        cfg_path = setup_treatment_agent(workdir, src=src)
+        cfg_path = setup_treatment_agent(workdir, src=src, evolve_patch=cfg.get("evolve_agent"))
+        # the evolve_agent.yaml binds `middleware.*`/`tools.*` relative to its dir (mirrors
+        # evolve.run_evolve_agent, which inserts the agent dir on sys.path before launch).
+        agent_dir = str(Path(cfg_path).parent)
+        if agent_dir not in sys.path:
+            sys.path.insert(0, agent_dir)
         os.environ["EVOLVE_WORK_DIR"] = str(workdir)
+        if cfg.get("llm"):  # set LLM_MODEL/BASE_URL/API_KEY the evolve_agent.yaml references
+            from evolve import get_llm_config, set_llm_env
+            set_llm_env(get_llm_config(cfg, "evolve"))
         agent = agent_factory(cfg_path)
         result = agent.run(message=query, context={
             "date": datetime.now().strftime("%Y-%m-%d"),
@@ -131,8 +166,8 @@ def make_live_runner(*, src: Path = EVOLVE_AGENT_DIR, agent_factory=_nexau_agent
 class EvolveAgentProposer:
     """Loop ``Proposer``: build the query, run the agent (real by default), read its manifest."""
 
-    def __init__(self, agent_runner: AgentRunner | None = None):
-        self.run_agent = agent_runner or make_live_runner()
+    def __init__(self, cfg: dict | None = None, agent_runner: AgentRunner | None = None):
+        self.run_agent = agent_runner or make_live_runner(cfg)
 
     def __call__(self, doc: HDPDoc, evidence: dict, iteration: int) -> dict:
         query = build_query(doc, evidence, iteration)

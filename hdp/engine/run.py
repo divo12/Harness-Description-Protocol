@@ -151,7 +151,7 @@ def cmd_evolve(cfg: dict, dry_run: bool, *, proposer=None, eval_fn=None) -> int:
     with Run(_run_id(arm, _timestamp()), arm, seed=seed, config=cfg) as run:
         run.set_phase("evolve")
         results = loop.evolve(
-            cfg, proposer=proposer or EvolveAgentProposer(), workdir=run.dir,
+            cfg, proposer=proposer or EvolveAgentProposer(cfg), workdir=run.dir,
             dry_run=dry_run, max_iterations=max_it, eval_fn=eval_fn or eval_harness, run=run,
         )
         print()
