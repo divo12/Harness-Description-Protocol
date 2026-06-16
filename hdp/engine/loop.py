@@ -83,6 +83,23 @@ def _attestation_summary(manifest: dict, ares) -> str:
     return "\n".join(lines)
 
 
+def _apply_experiment_patch(cfg: dict, harness_dir: Path) -> None:
+    """Apply the experiment-time ``code_agent_patch`` (e.g. ``reasoning.effort``) to the generated
+    harness — the SAME inference overlay AHE's control applies to its workspace. Without it the
+    generated agent runs gpt-5.x at default reasoning while control runs at ``effort: high``, so
+    treatment would underperform control for a reason that has nothing to do with HDP. Live path
+    only (keeps the dry-run "never import evolve" invariant)."""
+    patch = cfg.get("code_agent_patch") or {}
+    if not patch:
+        return
+    fname = cfg.get("agent_config_filename", "code_agent.yaml")
+    try:
+        from ahe_control.evolve import apply_code_agent_patch
+        apply_code_agent_patch(harness_dir, fname, patch)
+    except Exception as e:  # an inference overlay is best-effort; never fail the iteration over it
+        print(f"[hdp-loop] code_agent_patch skipped: {e}")
+
+
 def _failure_evidence(cfg: dict, ev: EvalResult, it_dir: Path, it: int, dry_run: bool) -> dict:
     """ADB root-cause overview for the failing tasks — the SAME signal AHE's control arm gets.
     Returns {} under dry-run / ADB disabled / no failures / unavailable adb."""
@@ -127,6 +144,8 @@ def evolve(cfg: dict, *, proposer: Proposer, workdir: Path | str, dry_run: bool 
     for it in range(1, max_iterations + 1):
         it_dir = workdir / f"iter-{it:03d}"
         generate(doc, it_dir / "harness", target=target)
+        if not dry_run:  # apply the same inference overlay control uses, so the agents match
+            _apply_experiment_patch(cfg, it_dir / "harness")
         ev = eval_fn(cfg, it_dir / "harness", it_dir, dry_run=dry_run, fake_reward=fake)
 
         evidence: dict = {"pass_rate": ev.pass_rate, "iteration": it}

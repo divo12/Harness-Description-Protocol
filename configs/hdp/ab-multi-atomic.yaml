@@ -1,0 +1,8 @@
+# Same as ab-multi.yaml but the ATOMIC guard engine (the reconcile-vs-atomic treatment arm).
+_base: ./ab-multi.yaml
+_name: hdp-ab-multi-atomic
+_description: "HDP treatment (atomic) — 3 tasks x1 iter, agent-parity vs control."
+
+hdp:
+  guard:
+    engine: atomic
