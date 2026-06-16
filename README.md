@@ -1,332 +1,199 @@
-# Agentic Harness Engineering: Observability-Driven Automatic Evolution of Coding-Agent Harnesses
+# HDP — Harness Definition Protocol & Engine
 
-<div align="left">
+> A typed, version-controlled, **governed** way to evolve a coding agent's *harness*
+> (prompts, tools, middleware, memory, …) — built on top of the AHE evolve→analyze→improve loop.
 
-<p align="left">
-  <a href="https://arxiv.org/abs/2604.25850"><img alt="Paper" src="https://img.shields.io/badge/Paper-arXiv-b31b1b.svg?logo=arxiv&logoColor=white"></a>
-  <a href="agentic_harness_engineering.pdf"><img alt="PDF" src="https://img.shields.io/badge/PDF-Download-ec1c24.svg?logo=adobeacrobatreader&logoColor=white"></a>
-  <a href="https://dawning-road.github.io/blog/agentic-harness-engineering"><img alt="Blog" src="https://img.shields.io/badge/Blog-Dawning_Road-ff7e1b.svg?logo=readthedocs&logoColor=white"></a>
-  <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg">
-  <img alt="Python" src="https://img.shields.io/badge/python-%E2%89%A53.13-blue.svg">
-  <img alt="Managed with uv" src="https://img.shields.io/badge/managed_with-uv-261230?logo=python&logoColor=white">
-</p>
-
-</div>
-
-<p align="center">
-  <img src="assets/figures/banner.jpg" alt="Agentic Harness Engineering" width="100%">
-</p>
-
-<p align="left">
-  English | <a href="README_zh.md">简体中文</a>
-</p>
+The base LLM is fixed. What changes is the **harness** around it, described as a single typed
+document (`hdp.yaml`) and edited under a safety **guard** so an automated agent can improve the
+harness without ever loosening its own permissions.
 
 ---
 
-## 📰 News
+## What this does, in one picture
 
-- **[2026-05-14]** 🏆 AHE (on GPT-5.5) ranked **#3** on the [Terminal-Bench 2.0 leaderboard](https://www.tbench.ai/leaderboard/terminal-bench/2.0) with **84.7%** — ranking as of 2026-05-15
-- **[2026-04-30]** ✍️ Blog post on Dawning Road (English & Chinese) — a more detailed account of the exploration behind AHE: [Agentic Harness Engineering](https://dawning-road.github.io/blog/agentic-harness-engineering)
-- **[2026-04-28]** 📄 Paper released on arXiv: [Agentic Harness Engineering: Observability-Driven Automatic Evolution of Coding-Agent Harnesses](https://arxiv.org/abs/2604.25850)
-- **[2026-04]** 🎉 Framework released
-
----
-
-## 🎯 Overview
-
-**AHE (Agentic Harness Engineering)** is an open **observability system** for automatically evolving the harness around a coding agent. The base model is held fixed; what evolves are the harness components — system prompts, tool descriptions, tool implementations, middleware, skills, sub-agents, and long-term memory.
-
-AHE rests on three observability layers:
-
-- **Component observability** — [**NexAU**](https://github.com/nex-agi/NexAU.git) decomposes the harness into seven orthogonal, file-level components, each git-tracked so every edit is auditable and revertible.
-- **Experience observability** — *Agent Debugger* distills ~10M-token raw traces into layered, sourced reports; the optimizer reads digests by default but can always drill back to any rollout's raw trace.
-- **Decision observability** — *Evolve Agent* proposes evidence-backed edits, predicts their impact, and is automatically falsified by the next iteration's flipped tasks.
-
-Across ten `evaluate → analyze → improve` iterations, **AHE (Agentic Harness Engineering)** lifts Terminal-Bench 2 pass@1 from **69.7% to 77.0%** on GPT-5.4, surpasses the hand-written Codex (71.9%) and the self-evolving ACE and TF-GRPO baselines, and produces a frozen harness that transfers without re-evolution to SWE-bench-verified and to four alternate base models, indicating that the evolved components encode general engineering experience rather than benchmark-specific tuning.
-
-<p align="center">
-  <img src="assets/figures/transfer_model.png" alt="Cross-Model Transfer" width="28%">
-  <img src="assets/figures/case_study.png" alt="Case Study" width="31%">
-  <img src="assets/figures/training_curve.png" alt="Training Curve" width="39%">
-</p>
-
----
-
-## 🚀 Quick Start
-
-### 0. Prerequisites
-
-- Python ≥ 3.13
-- [uv](https://docs.astral.sh/uv/)
-- tmux
-
-```bash
-# macOS
-brew install uv tmux
-
-# Linux
-curl -LsSf https://astral.sh/uv/install.sh | sh
-sudo apt install -y tmux
+```
+ HDP document  ──gen──▶  runnable harness  ──eval──▶  pass@1 + per-task results
+ (hdp.yaml)                                                    │
+      ▲                                                        ▼
+      │                                              attest (settle predictions)
+   track ◀── guard ◀── propose (evolve-agent edits the document)
+ (commit,      (govern the edit:                 │
+  version)      reconcile OR atomic)             ▼
+                                          one governed iteration
 ```
 
-### 1. Clone + install dependencies
+One iteration = **gen → eval → attest → propose → guard → track**, all over the HDP document.
+A working copy of the document is edited; the source is never mutated.
+
+---
+
+## Prerequisites
+
+- **Python ≥ 3.13**
+- **[uv](https://github.com/astral-sh/uv)** (package manager)
+- **tmux** (used by the underlying AHE harness runner)
+- For **real** evaluations only: an LLM endpoint + an [E2B](https://e2b.dev) key (see `.env` below).
+  Everything else runs **for $0**.
+
+---
+
+## Setup (once)
 
 ```bash
-git clone https://github.com/Curry09/agentic-harness-engineering.git
-cd agentic-harness-engineering
+# 1. install dependencies
 uv sync
+
+# 2. create your .env (real runs only — dry-run/tests need nothing here)
+cat > .env <<'EOF'
+LLM_API_KEY=sk-...           # your model API key
+LLM_BASE_URL=https://.../v1/ # OpenAI-compatible base URL
+E2B_API_KEY=e2b_...          # sandbox provider key
+EOF
 ```
 
-> `uv sync` installs every dependency declared in `pyproject.toml`.
-
-### 2. Configure environment variables
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env`. At minimum, set:
-
-| Variable | Purpose |
-|---|---|
-| `LLM_API_KEY` / `LLM_BASE_URL` | Main LLM endpoint (`code_agent` and `evolve_agent` both consume it) |
-| `E2B_API_KEY` | [E2B](https://e2b.dev/) sandbox — see the next subsection for SaaS vs. self-hosted |
-| `SERPER_API_KEY` | Web search used by `evolve_agent` |
-
-`ADB_LLM_*` and `GPT54_LLM_*` are optional — leave them unset to fall back to `LLM_*`, or set them to point ADB / the gpt-5.4 experiment at a stronger model. `LANGFUSE_*`, `BP_HTML_PARSER_*`, and `FEISHU_WEBHOOK` are all optional observability / convenience hooks; see `.env.example` for the full list.
-
-#### E2B sandbox: SaaS vs. self-hosted
-
-AHE runs every rollout inside an E2B sandbox. Two deployment modes are supported:
-
-- **SaaS E2B (default).** Set **only** `E2B_API_KEY` and leave `E2B_API_URL` / `E2B_DOMAIN` unset (or commented out). The SDK talks to `e2b.dev` automatically.
-
-  > ⚠️ **Concurrency cap.** SaaS E2B enforces a per-account **concurrent sandbox limit** tied to your tier. If harbor tries to spawn more sandboxes than the cap allows, the extra sandboxes fail to start and the iteration stalls. Before raising parallelism in your harbor / experiment config, check your tier's quota and stay safely under it.
-
-- **Self-hosted E2B cluster.** Set `E2B_API_KEY` **and** point the SDK at your cluster:
-
-  ```dotenv
-  E2B_API_KEY="your_e2b_key"
-  E2B_API_URL="https://your-e2b-host.example.com"
-  E2B_DOMAIN="your-e2b-host.example.com"
-  ```
-
-  No shared concurrency cap applies, but the cluster's hardware capacity still does.
-
-### 3. Build E2B templates (one-time per dataset)
-
-The dataset here is a pack from [`laude-institute/harbor-datasets`](https://github.com/laude-institute/harbor-datasets) — clone the subset you need and point `--dataset-dir` at its directory.
-
-Every rollout runs inside an E2B sandbox spawned from a prebuilt template that already has `uv` and the NexAU/harbor venv at `/opt/nexau-venv`. Build those templates once before launching:
-
-```bash
-# Build every template declared by the dataset, 16 in parallel
-uv run python scripts/build_templates.py --dataset-dir /path/to/dataset -j 16
-
-# Resume after a failure: only retry tasks whose latest E2B build status is ERROR
-uv run python scripts/build_templates.py --dataset-dir /path/to/dataset --retry-failed
-
-# Build a specific subset of tasks
-uv run python scripts/build_templates.py --dataset-dir /path/to/dataset task_a task_b
-```
-
-The dataset directory must contain one subdir per task with a `task.toml` declaring `[environment].docker_image` (or an `environment/Dockerfile` fallback). Each task's template alias is `<task_name>` with `.` replaced by `-`.
-
-The default packages baked into each template come from `scripts/build_templates.py:DEFAULT_NEXAU_PACKAGES` (a public NexAU + the in-sandbox `NexAU-harbor` variant, intentionally distinct from the host-side `harbor-LJH` in `pyproject.toml`). Override with one or more `--nexau-package <git-or-pip-spec>` flags if you need a different revision in the sandbox.
-
-If your tasks pull from a private Docker registry, also export `DOCKER_REGISTRY_USERNAME` and `DOCKER_REGISTRY_PASSWORD` before invoking the script.
-
-### 4. Launch
-
-```bash
-# Run a single experiment in the background via tmux
-./scripts/evolve.sh configs/experiments/exp-003-simple-code-gpt54.yaml
-
-# Launch and auto-attach to the log stream
-./scripts/evolve.sh --attach configs/experiments/exp-003-simple-code-gpt54.yaml
-
-# Batch: launch every experiment under configs/experiments/
-./scripts/evolve.sh --batch
-```
-
-Common tmux operations after launch:
-
-```bash
-tmux ls                         # list sessions
-tmux attach -t <session>        # attach to a session
-# Ctrl-b d                      # detach (keeps running in background)
-tmux kill-session -t <session>  # terminate
-```
+That's it. The next section runs **without** any keys.
 
 ---
 
-## 🔧 How It Works
+## Quick start — the $0 paths (start here)
 
-The base model is held fixed; what evolves is the **harness around it**. Each outer iteration is `evaluate → analyze → improve`, built on the three observability layers from the Overview.
+Run these in order; none of them spends money or touches the network.
 
-### 1. Evaluate — emit traces, not just scores
+```bash
+# 1. run the test suite (fast, deterministic) — expect "70 passed"
+uv run python -m pytest hdp/engine/tests -q
 
-`harbor` runs the current `code_agent` over the dataset inside isolated E2B sandboxes. Per task it writes:
+# 2. end-to-end wiring check on a tiny slice → prints a 2-arm A/B table with fake numbers
+./scripts/hdp.sh smoke --dry-run
 
-- `agent/nexau_in_memory_tracer.cleaned.json` — full step-level trace (messages, tool calls, middleware events)
-- `agent/nexau.txt` — runtime log (middleware errors, crashes, warnings)
-- `verifier/reward.txt` — pass/fail outcome
+# 3. compile the HDP document into a runnable NexAU harness
+./scripts/hdp.sh gen
 
-The **trace, not the pass rate**, is the unit every later step operates on.
-
-### 2. Analyze — distill ~10M-token traces into sourced evidence
-
-*Agent Debugger* compresses each iteration's raw traces (routinely >10M tokens) into layered reports:
-
-- `analysis/overview.md` — cross-task root-cause summary
-- `analysis/detail/{task}.md` — per-task deep analysis
-
-The optimizer reads digests by default, but every claim links back to the originating raw trace, so it can drill down before committing to a change.
-
-> **Note on Agent Debugger licensing.** The current release ships a *partially* open-sourced Agent Debugger; due to company strategy, it cannot be fully open-sourced at this time.
-
-### 3. Improve — evidence-backed, falsifiable edits
-
-*Evolve Agent* may only write inside `workspace/`, which exposes the seven NexAU components: `systemprompt.md`, `code_agent.yaml`, `tool_descriptions/`, `tools/`, `middleware/`, `skills/`, `sub_agents/` (plus `LongTermMEMORY.md`). For every edit it must commit four fields:
-
-1. **Failure evidence** — the failing tasks and trace excerpts that motivate the change
-2. **Root cause** — *why* it failed, not just *what* failed
-3. **Targeted fix** — the change that directly addresses that cause
-4. **Predicted impact** — which tasks should flip to pass, and which are at risk
-
-### 4. Loop — staggered generations enable falsification
-
-Each `runs/iteration_NNN/` mixes two generations: `input/` holds the workspace produced by loop `NNN-1` (just evaluated), `evolve/` holds what loop `NNN` writes (evaluated next loop). Flips (pass↔fail) on the next eval are attributed back to this loop's edits in `change_evaluation.json` — predictions that don't hold get rolled back or revised. The loop terminates on `target_pass_rate` or `max_iterations`.
-
-### Main components
-
-| Component | Role |
-|---|---|
-| `evolve.py` | Main-loop orchestrator |
-| `agents/code_agent_simple/` | The coding agent that is being evaluated and evolved |
-| `agents/evolve_agent/` | The meta-agent that performs the improvement step (built on the [NexAU](https://github.com/nex-agi/NexAU.git) framework) |
-| `agents/explore_agent/` | Upstream dataset / source-code exploration agent |
-| `configs/` | `base.yaml` (shared defaults) + `experiments/` (per-experiment overlays) |
-| `scripts/` | tmux launcher wrappers (`evolve.sh`, `evolve-resume.sh`) |
-
-### Directory layout
-
+# 4. recover an HDP document from an existing harness (the reverse of gen)
+./scripts/hdp.sh lift
 ```
-agentic-harness-engineering/
-├── evolve.py                       # main loop
-├── trace_converter.py              # rollout trace → debugger-friendly JSON
-├── agents/
-│   ├── code_agent_simple/          # the coding agent under evolution
-│   ├── evolve_agent/               # the evolution meta-agent
-│   │   ├── evolve_prompt.md
-│   │   ├── middleware/             # context compaction / failover / ralph loop …
-│   │   ├── skills/                 # agent-debugger-cli / nexau-evolution-guide
-│   │   └── tools/                  # file / shell / web / session tools
-│   └── explore_agent/              # exploration agent (sources + web)
-├── configs/
-│   ├── base.yaml                   # shared defaults
-│   └── experiments/                # one overlay per experiment
-├── scripts/
-│   ├── evolve.sh                   # tmux launcher
-│   └── evolve-resume.sh            # resume helper
-└── .env.example
-```
+
+If all four work, your install is healthy. **`smoke --dry-run` is the canonical "does it all
+wire up?" check.**
+
+> 💡 The guard's command-line tool also works standalone:
+> ```bash
+> python -m hdp.engine.guard <doc.hdp> --edit edit.json          # decide only (no changes)
+> python -m hdp.engine.guard <doc.hdp> --edit edit.json --apply  # enforce atomically
+> ```
 
 ---
 
-## Configuration (base + overlay)
+## Running a real evaluation (spends money)
 
-`configs/base.yaml` holds the shared defaults. Each `configs/experiments/exp-*.yaml` inherits it via a leading `_base: ../base.yaml` line and overrides only the fields that differ. Any `${ENV_NAME}` reference inside a YAML file is substituted from `.env`.
+Real Terminal-Bench-2 runs go through the **`evolve`** sub-command — **not** `bench`
+(see gaps below). Start small with the smoke caps.
 
-**Key fields in `base.yaml`:**
+1. Edit `configs/hdp/master.yaml` → set the smoke slice and turn the real eval on:
+   ```yaml
+   run:
+     smoke: { enabled: true, max_tasks: 5, max_iterations: 1, k: 1, dry_run: false }
+   ```
+2. Run it:
+   ```bash
+   ./scripts/hdp.sh evolve --config configs/hdp/master.yaml
+   ```
 
-| Field | Description |
+This launches the **real** evolve-agent (LLM) and a **real** harbor rollout on E2B over a 5-task
+slice, then governs the proposed edit and records it.
+
+> ⚠️ **Money / gotchas**
+> - `evolve --dry-run` fakes only the *eval reward* — the proposer is still the real LLM agent, so it is **not** free.
+> - `bench` and `smoke` **without** `--dry-run` deliberately raise `NotImplementedError` ("real harbor eval lands in Phase 5"). **Real evals only go through `evolve`.**
+
+### Guard ablation (the built-in study)
+
+The loop can govern edits with **either** of two engines, switched by one config key:
+
+```yaml
+hdp:
+  guard:
+    engine: reconcile   # per-delta rollback (soft) — DEFAULT
+    # engine: atomic    # all-or-nothing tiered hard-block (strict) + review mode
+    mode: enforce       # enforce | review   (atomic engine only)
+```
+
+Run `evolve` once with each value to compare soft per-delta reconciliation vs strict
+transactional enforcement.
+
+---
+
+## Configuration
+
+You only ever edit **`configs/hdp/master.yaml`**. It inherits the repo's base config
+(`_base: ../base.yaml`) and adds two blocks:
+
+| Key | Meaning |
 |---|---|
-| `path` | Dataset path |
-| `target_pass_rate` | Stop once reached (default 0.95) |
-| `max_iterations` | Maximum number of iterations (default 100) |
-| `harbor_job_timeout_minutes` | Per-harbor-evaluation timeout (0 = unlimited) |
-| `experiment_timeout_minutes` | Total wall-clock budget for the experiment (0 = unlimited) |
-| `llm.api_key / base_url / model` | Main LLM config (usually left as `${LLM_*}`) |
-| `agent_debugger.llm` | Dedicated LLM for ADB (can use a stronger model for debugging) |
-| `notify.feishu_webhook` | Optional Feishu webhook for experiment milestones |
+| `hdp.document` | the source-of-truth HDP doc fed to `gen` |
+| `hdp.harness` | the backend harness fed to `lift` |
+| `hdp.target` | backend generator/lifter (`nexau`) |
+| `hdp.guard.engine` / `.mode` | which guard governs edits (see ablation above) |
+| `run.arm` / `run.seed` | run identity |
+| `run.smoke.*` | tiny-slice + `dry_run` switches for cheap/free runs |
 
-### Dataset configuration
+---
 
-An experiment's data source is specified via `path` **or** `dataset` — pick one:
+## Repository layout
 
-| Form | Meaning | Example |
+```
+hdp/
+  SPEC.md                  the protocol (ETCLOVG layers, operators, manifests, safety rules)
+  schema/                  JSON Schemas (source of truth for the typed model)
+  validator/               reference validator (the policy the guard reuses)
+  examples/                a worked HDP document (the AHE seed agent)
+  engine/
+    core/                  typed model, loader, component differ
+    adapters/              FrameworkAdapter seam + nexau adapter
+    gen/  lift/            document ⇄ harness
+    guard/                 the edit gateway — two engines (see below)
+    track/  attest/        version control + verdict reconciliation
+    loop.py propose.py eval.py bench/      the evolve loop + A/B
+    run.py                 master entry point (lift|gen|evolve|bench|smoke)
+  STATUS.md                live implementation status
+scripts/hdp.sh             thin wrapper around run.py
+configs/hdp/master.yaml    the one file you edit to launch the engine
+```
+
+### The two guard engines
+
+| | `reconcile` (default) | `atomic` |
 |---|---|---|
-| `path: "./dataset/xxx"` | Local dataset directory (relative to the AHE root) | `./dataset/terminal-bench-2` |
-| `path: "/abs/path/xxx"` | Local dataset directory (absolute path) | `/root/dataset/terminal-bench-2` |
-| `dataset: "<name>@<ver>"` | Reference a harbor built-in dataset (no local files required) | `terminal-bench@2.0` |
+| Policy on a bad edit | roll back **only the denied** component deltas, keep the rest | revert the **whole** edit |
+| Checks | protected / read_only / editable / manifest | + confinement, secrets, blast-radius, model-config, structural; + `review` mode + audit trail |
+| Use | soft, partial | strict, transactional |
 
-Public dataset packs (in the layout AHE expects under `path:`) are published at [`laude-institute/harbor-datasets`](https://github.com/laude-institute/harbor-datasets) — clone or download the subset you need and point `path` at its directory.
-
-The default `path` values in `base.yaml` and `configs/experiments/*.yaml` are **placeholders only** — adjust them for your environment, or comment out `path` and uncomment the `dataset` line to use a harbor built-in dataset instead.
+Both are exposed through `guard.govern(old, new, manifest, engine=...)`.
 
 ---
 
-## CLI reference
+## Current status & known gaps
 
-### `python evolve.py`
+Phases 0–5 are implemented and the **dry-run / test paths are fully green** (70 tests pass,
+smoke produces the 2-arm table). The following are **not yet complete** — none of them crashes
+the `evolve` path, but they limit what you can claim:
 
-| Flag | Description |
-|---|---|
-| `--config <file>` | Config file (overlay takes precedence) |
-| `--batch [dir\|files...]` | Batch mode; defaults to scanning `configs/experiments/` |
-| `--experiment <name>` | Resume an existing experiment (pass the directory name under `experiments/`) |
-| `--start-iteration N` | Start from iteration N (default 1) |
-| `--skip-eval` | Skip evaluation and reuse existing rollouts (for debugging) |
+1. **Phase 4 — auto-rollback missing.** `attest` can label a regressive edit `harmful`, but there
+   is no `track.rollback()` and the loop does not auto-revert it. The version-history *query* API
+   (history-per-component, harness-at-iter-N, diff) is also not built.
+2. **Phase 5 — `bench` is a stub.** `bench` currently just prints the 2-arm *smoke* table; a real
+   treatment-vs-control campaign runner (multi-seed, real quality/cost metrics) is not wired.
+   `hdp.enabled` is also not yet added to `configs/base.yaml` for the live control arm.
+3. **Real benchmark results are spend-gated and unproven.** Phase 1's score-match
+   (generated harness ≈ 62.9% on Terminal-Bench 2) and the Phase 5 live A/B campaign have only
+   been exercised via dry-run / unit tests. The first real `evolve` run may hit integration
+   rough edges.
+4. **`reconcile` is the *softer* guard.** It rolls back manifest entries but **not** embedded file
+   *content*, and does not check `base_model` / secrets / blast-radius. The `atomic` engine covers
+   all of these. Choose accordingly (see the ablation table).
 
-### `./scripts/evolve.sh`
-
-A thin wrapper around `uv run python evolve.py` + tmux.
-
-| Flag | Description |
-|---|---|
-| `<config_file>` | Positional argument: path to the config file |
-| `--experiment <name>` | Resume an existing experiment |
-| `--start-iteration N` | Starting iteration |
-| `--skip-eval` | Skip evaluation |
-| `--session <name>` | Custom tmux session name |
-| `--batch` | Launch every overlay in batch mode |
-| `--attach` | Auto-attach after launch |
+See **`hdp/STATUS.md`** for the authoritative, up-to-date status.
 
 ---
 
-## Common scenarios
-
-**Resume an interrupted experiment from iteration 16:**
-
-```bash
-./scripts/evolve.sh \
-  --experiment 2026-04-10__23-20-14__gpt54 \
-  --start-iteration 16 \
-  configs/experiments/exp-003-simple-code-gpt54.yaml
-```
-
-**Run only evolve_agent without re-running evaluation:**
-
-```bash
-./scripts/evolve.sh \
-  --experiment <existing-exp-dir> \
-  --skip-eval \
-  configs/experiments/exp-003-simple-code-gpt54.yaml
-```
-
----
-
-## License
-
-MIT
-
----
-
-## Star History
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=china-qijizhifeng/agentic-harness-engineering&type=Date&theme=dark" />
-  <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=china-qijizhifeng/agentic-harness-engineering&type=Date" />
-  <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=china-qijizhifeng/agentic-harness-engineering&type=Date" />
-</picture>
+<sub><sup>Built on top of <b>AHE — Agentic Harness Engineering</b> (the original evolve→analyze→improve loop, NexAU framework, harbor eval, and Terminal-Bench setup), whose codebase this engine extends. All credit for that foundation belongs to the AHE authors; the HDP protocol and engine layered here reuse it rather than replace it. The original AHE README is preserved at <a href="README_zh.md">README_zh.md</a> (Chinese) and in git history.</sup></sub>
