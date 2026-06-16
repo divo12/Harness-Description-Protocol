@@ -1,0 +1,7 @@
+# Parity confirmation: same 3 tasks at k=3 (9 rollouts/arm) so harbor's Mean reward smooths the
+# k=1 sampling noise. Treatment harness is byte-identical to control, so the rates should converge.
+_base: ./ab-multi.yaml
+_name: hdp-ab-multi-k3-reconcile
+harbor:
+  k: 3
+  n_concurrent: 3

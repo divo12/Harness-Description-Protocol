@@ -1,0 +1,5 @@
+_base: ./exp-control-multi.yaml
+_name: control-multi-k3
+harbor:
+  k: 3
+  n_concurrent: 3

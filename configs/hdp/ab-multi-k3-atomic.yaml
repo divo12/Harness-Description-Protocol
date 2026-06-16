@@ -1,0 +1,5 @@
+_base: ./ab-multi-k3.yaml
+_name: hdp-ab-multi-k3-atomic
+hdp:
+  guard:
+    engine: atomic
