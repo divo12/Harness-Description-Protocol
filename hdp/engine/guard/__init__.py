@@ -4,14 +4,19 @@ The proposer free-edits the HDP document; ``guard`` is the ring around it that m
 *governed* rather than the agent *caged* — realizing HarnessFix's "constrained edits beat
 unconstrained" as a post-edit check, not a prompt restriction.
 
-Two pieces, mirroring a policy decision point (PDP) + policy enforcement point (PEP):
+This module ships two complementary gateways over the same governance policy:
 
-* :func:`evaluate` (PDP) — diff old→new, decide allow/deny for each component delta against the
-  OLD document's ``governance.evolution`` (editable / read_only / protected) and the
-  manifest-before-edit rule (every delta must be declared with a consistent operator). The OLD
-  policy governs, so an edit cannot widen its own permissions.
-* :func:`enforce` (PEP) — return a reconciled document with every *denied* component delta rolled
-  back to its old state, formatting preserved (ruamel ``raw`` edited in place), re-validated.
+* **Reconciliation gateway** (:func:`evaluate` / :func:`enforce`, in this file) — diff old→new and
+  roll *denied* component deltas back to their old state, keeping the allowed ones. Used by the
+  evolve loop (:mod:`hdp.engine.loop`, :mod:`hdp.engine.propose`).
+* **Atomic transaction gateway** (:func:`decide` / :func:`apply`, in :mod:`~hdp.engine.guard.pdp`
+  and :mod:`~hdp.engine.guard.pep`) — tiered hard-block (CORE / STRUCTURAL / SOFT) with an atomic
+  stage→swap, ``review`` mode, and an audit trail. The confinement CORE is never overridable;
+  SOFT rules are denied in ``enforce`` (default, what bench runs) and routed to human review in
+  ``review``. ``apply()`` is the only write path for an edit that must succeed-or-not-at-all.
+
+The ``evaluate``/``decide`` split mirrors a policy decision point (PDP); ``enforce``/``apply`` a
+policy enforcement point (PEP).
 """
 from __future__ import annotations
 
@@ -21,8 +26,23 @@ from typing import Any
 from hdp.engine.core.differ import ComponentDelta, diff_docs
 from hdp.engine.core.loader import HDPDoc, HDPManifest
 
+# Atomic-transaction gateway (tiered hard-block + review + audit). Additive: leaves the
+# reconciliation gateway below untouched.
+from hdp.engine.guard.pdp import Decision, Edit, Tier, Violation, decide
+from hdp.engine.guard.pep import ApplyResult, apply, approve, dry_decide
+
 NAME = "guard"
 PHASE = "Phase 3 (guard)"
+
+__all__ = [
+    # reconciliation gateway
+    "evaluate", "enforce", "GuardReport", "GuardDecision",
+    # atomic-transaction gateway
+    "Decision", "Edit", "Tier", "Violation", "decide",
+    "ApplyResult", "apply", "approve", "dry_decide",
+    # shared
+    "mode_from_config", "smoke_step",
+]
 
 # change-kind → the operators that may legitimately declare it (SPEC §7.1).
 _OPERATOR_FOR_CHANGE = {
@@ -183,7 +203,15 @@ def enforce(old: HDPDoc, new: HDPDoc, manifest: dict | None = None,
     return HDPDoc(path=new.path, raw=raw, model=model), report
 
 
+def mode_from_config(cfg: dict, *, force_enforce: bool = False) -> str:
+    """Resolve the atomic-gateway mode from config. Bench passes force_enforce=True (runs enforce)."""
+    if force_enforce:
+        return "enforce"
+    mode = ((cfg.get("hdp") or {}).get("guard") or {}).get("mode", "enforce")
+    return mode if mode in ("enforce", "review") else "enforce"
+
+
 def smoke_step(run) -> None:
-    """Phase 0 dry-pipeline stub (the real path is :func:`enforce`)."""
+    """Phase 0 dry-pipeline stub (the real paths are :func:`enforce` / :func:`apply`)."""
     run.log("guard_allowed", 1, phase="evolve", change_id="chg-smoke")
     run.log("guard_denied", 0, phase="evolve")
