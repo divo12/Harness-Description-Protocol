@@ -11,19 +11,38 @@ harness without ever loosening its own permissions.
 
 ## What this does, in one picture
 
-```
- HDP document  ──gen──▶  runnable harness  ──eval──▶  pass@1 + per-task results
- (hdp.yaml)                                                    │
-      ▲                                                        ▼
-      │                                              attest (settle predictions)
-   track ◀── guard ◀── propose (evolve-agent edits the document)
- (commit,      (govern the edit:                 │
-  version)      reconcile OR atomic)             ▼
-                                          one governed iteration
+```mermaid
+flowchart TD
+    DOC[("HDP document (hdp.yaml)<br/>typed source of truth")]
+    GEN["gen → runnable harness"]
+    EVAL["eval — harbor on E2B sandbox<br/>→ pass@1 + per-task results"]
+    ATT["attest — settle last round's predictions<br/>→ effective / partial / ineffective / harmful"]
+    PROP["propose — evolve-agent edits a<br/>working copy + writes a change manifest"]
+    GUARD{"guard: govern the edit"}
+    TRACK["track — git commit + semver bump"]
+
+    DOC -->|compile| GEN
+    GEN -->|run the harness| EVAL
+    EVAL -->|flips: pass↔fail| ATT
+    ATT -->|evidence + verdicts| PROP
+    PROP -->|proposed edit| GUARD
+    GUARD -->|"reconcile (default):<br/>roll back only the denied edits"| TRACK
+    GUARD -->|"atomic:<br/>any violation reverts the whole edit"| TRACK
+    TRACK -.->|next iteration| DOC
+
+    classDef edit fill:#e3f0ff,stroke:#3b82c4,color:#0b2540;
+    classDef measure fill:#e6f6ea,stroke:#3a9d57,color:#0b2540;
+    classDef store fill:#f5f5f5,stroke:#888,color:#222;
+    class GEN,PROP,GUARD,TRACK edit;
+    class EVAL,ATT measure;
+    class DOC store;
 ```
 
 One iteration = **gen → eval → attest → propose → guard → track**, all over the HDP document.
-A working copy of the document is edited; the source is never mutated.
+
+- The **source document is never mutated** — only a working copy is edited.
+- `guard` is the agent's **only write path**; an edit can never widen its own permissions.
+- Blue = steps that touch the document; green = measurement; the dashed arrow closes the loop into the next iteration.
 
 ---
 
