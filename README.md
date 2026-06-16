@@ -1,5 +1,8 @@
 # HDP — Harness Definition Protocol & Engine
 
+<img width="2752" height="1536" alt="WhatsApp Image 2026-06-16 at 14 44 27" src="https://github.com/user-attachments/assets/4ee91745-dff3-4fc1-abad-88f68f8b3f4b" />
+
+
 > A typed, version-controlled, **governed** way to evolve a coding agent's *harness*
 > (prompts, tools, middleware, memory, …) — built on top of the AHE evolve→analyze→improve loop.
 
