@@ -20,11 +20,12 @@ policy enforcement point (PEP).
 """
 from __future__ import annotations
 
+import shutil
 from dataclasses import dataclass, field
 from typing import Any
 
 from hdp.engine.core.differ import ComponentDelta, diff_docs
-from hdp.engine.core.loader import HDPDoc, HDPManifest
+from hdp.engine.core.loader import HDPDoc, HDPManifest, load
 
 # Atomic-transaction gateway (tiered hard-block + review + audit). Additive: leaves the
 # reconciliation gateway below untouched.
@@ -40,9 +41,12 @@ __all__ = [
     # atomic-transaction gateway
     "Decision", "Edit", "Tier", "Violation", "decide",
     "ApplyResult", "apply", "approve", "dry_decide",
-    # shared
-    "mode_from_config", "smoke_step",
+    # loop seam (selects the engine) + shared
+    "govern", "mode_from_config", "smoke_step",
 ]
+
+# Default guard engine for the evolve loop; overridable via cfg.hdp.guard.engine.
+DEFAULT_ENGINE = "reconcile"
 
 # change-kind → the operators that may legitimately declare it (SPEC §7.1).
 _OPERATOR_FOR_CHANGE = {
@@ -201,6 +205,43 @@ def enforce(old: HDPDoc, new: HDPDoc, manifest: dict | None = None,
             del raw["governance"]
     model = HDPManifest.model_validate(raw)
     return HDPDoc(path=new.path, raw=raw, model=model), report
+
+
+# --------------------------------------------------------------------------- #
+#  loop seam — pick the enforcement engine (application study: reconcile vs atomic)
+# --------------------------------------------------------------------------- #
+def govern(old: HDPDoc, new: HDPDoc, manifest: dict | None = None, *,
+           engine: str = DEFAULT_ENGINE, mode: str = "enforce",
+           require_manifest: bool = True) -> tuple[HDPDoc, GuardReport]:
+    """Govern an edit old→new and return ``(reconciled_doc, report)`` (``reconciled_doc.path``
+    is always ``new.path``). The *engine* selects the enforcement policy:
+
+    * ``"reconcile"`` (default) — per-delta rollback (:func:`enforce`): denied component deltas
+      revert to OLD, allowed deltas survive. Soft / partial.
+    * ``"atomic"`` — all-or-nothing via the tiered PDP (:func:`decide`, adds confinement / secret
+      / blast / structural checks + ``review`` mode): if ANY violation, the whole edit reverts to
+      OLD; otherwise NEW is kept.
+    """
+    if engine == "atomic":
+        return _govern_atomic(old, new, manifest, mode=mode)
+    return enforce(old, new, manifest, require_manifest=require_manifest)
+
+
+def _govern_atomic(old: HDPDoc, new: HDPDoc, manifest: dict | None,
+                   *, mode: str) -> tuple[HDPDoc, GuardReport]:
+    decision = decide(Edit(operator="update", layer="", component_id="", manifest=manifest),
+                      old, new, mode=mode)
+    report = GuardReport(meta_changed=diff_docs(old, new).meta_changed)
+    if decision.allowed:
+        return new, report
+    for v in decision.violations:  # one denied "decision" per violation → len(report.denied) is meaningful
+        report.decisions.append(
+            GuardDecision("*", "*", "reverted", allowed=False, reason=str(v))
+        )
+    # all-or-nothing: restore the working doc wholesale from the OLD snapshot.
+    shutil.rmtree(new.path)
+    shutil.copytree(old.path, new.path)
+    return load(new.path), report
 
 
 def mode_from_config(cfg: dict, *, force_enforce: bool = False) -> str:

@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 from ruamel.yaml import YAML
 
+from hdp.engine import guard
 from hdp.engine.core.loader import load
 from hdp.engine.guard import Edit, Tier, apply, approve, decide, dry_decide
 
@@ -230,3 +231,77 @@ def test_review_core_violation_still_hardblocks(tmp_path):
     assert res.status == "deny" and not res.applied  # protected is never quarantined
     assert res.review_dir is None
     assert _tree_hash(d) == before
+
+
+# --------------------------------------------------------------------------- #
+#  guard.govern — selectable engine (application study: reconcile vs atomic)
+# --------------------------------------------------------------------------- #
+def _old_new(tmp_path, mutate):
+    """Two on-disk docs: pristine OLD and a NEW whose hdp.yaml is mutated by *mutate*."""
+    old_dir = tmp_path / "old.hdp"
+    shutil.copytree(EXAMPLE, old_dir)
+    new_dir = tmp_path / "new.hdp"
+    shutil.copytree(EXAMPLE, new_dir)
+    y = YAML()
+    y.preserve_quotes = True
+    raw = y.load((new_dir / "hdp.yaml").read_text(encoding="utf-8"))
+    mutate(raw)
+    with (new_dir / "hdp.yaml").open("w", encoding="utf-8") as f:
+        y.dump(raw, f)
+    return load(old_dir), load(new_dir)
+
+
+def _ctx(raw, cid):
+    return next(c for c in raw["layers"]["context"] if c["id"] == cid)
+
+
+def _ver(raw):
+    return raw["layers"]["verification"][0]
+
+
+def _gov_manifest(*entries):  # entries: (component_id, layer, operator)
+    return {"hdp": "0.1", "iteration": 1, "changes": [
+        {"component_id": c, "layer": l, "operator": o, "change_id": f"chg-{c}"}
+        for c, l, o in entries]}
+
+
+def _mixed(raw):
+    _ctx(raw, "long-term-memory")["description"] = "allowed note"  # editable layer
+    _ver(raw)["description"] = "illegal tamper"                    # read_only layer
+
+
+def test_govern_reconcile_rolls_back_only_denied(tmp_path):
+    old, new = _old_new(tmp_path, _mixed)
+    manifest = _gov_manifest(("long-term-memory", "context", "update"),
+                             ("tb2-verifier", "verification", "update"))
+    reconciled, report = guard.govern(old, new, manifest, engine="reconcile")
+    assert not report.ok and len(report.denied) == 1
+    # the editable edit survives; only the read_only delta is reverted
+    assert reconciled.component("long-term-memory").description == "allowed note"
+    assert reconciled.component("tb2-verifier").description == \
+        old.component("tb2-verifier").description
+    assert reconciled.path == new.path
+
+
+def test_govern_atomic_keeps_clean_edit(tmp_path):
+    old, new = _old_new(tmp_path, lambda raw: _ctx(raw, "long-term-memory").__setitem__(
+        "description", "clean note"))
+    manifest = _gov_manifest(("long-term-memory", "context", "update"))
+    reconciled, report = guard.govern(old, new, manifest, engine="atomic")
+    assert report.ok and not report.denied
+    assert reconciled.component("long-term-memory").description == "clean note"
+    assert reconciled.path == new.path
+
+
+def test_govern_atomic_reverts_whole_edit_on_any_violation(tmp_path):
+    old, new = _old_new(tmp_path, _mixed)
+    manifest = _gov_manifest(("long-term-memory", "context", "update"),
+                             ("tb2-verifier", "verification", "update"))
+    reconciled, report = guard.govern(old, new, manifest, engine="atomic")
+    assert not report.ok and report.denied
+    # all-or-nothing: even the otherwise-allowed edit is reverted (contrast with reconcile)
+    assert reconciled.component("long-term-memory").description == \
+        old.component("long-term-memory").description
+    assert reconciled.component("tb2-verifier").description == \
+        old.component("tb2-verifier").description
+    assert reconciled.path == new.path

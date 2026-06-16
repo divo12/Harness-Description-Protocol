@@ -11,6 +11,9 @@ hdp:
   document: hdp/examples/code-agent-simple.hdp   # source-of-truth HDP doc (gen input)
   harness: agents/code_agent_simple              # backend harness (lift input)
   target: nexau                                  # backend generator/lifter
+  guard:                                         # which edit-governance engine the loop uses
+    engine: reconcile                            # reconcile (per-delta rollback) | atomic (all-or-nothing tiered)
+    mode: enforce                                # enforce | review  (atomic engine only)
 
 # Run scope: identifies the run, the arm, and the smoke slice.
 run:

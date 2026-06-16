@@ -7,7 +7,7 @@ One iteration = gen → eval → attest(previous) → propose → guard → trac
     eval(harness)         -> pass@1, tasks    reuse evolve.py (eval seam); dry-run for $0
     attest(prev_manifest) -> verdicts         settle last round's falsifiable predictions
     propose(doc)          -> edits + manifest  the retargeted evolve_agent (injectable for tests)
-    guard.enforce(old,new)-> reconciled doc    roll back any edit that violates governance
+    guard.govern(old,new) -> reconciled doc    engine=reconcile (per-delta) | atomic (all-or-none)
     track.record          -> manifest+version  persist + bump (commit-per-iteration optional)
 
 The proposer is injected (``Proposer`` protocol) so the loop is testable end-to-end with a stub
@@ -66,6 +66,9 @@ def evolve(cfg: dict, *, proposer: Proposer, workdir: Path | str, dry_run: bool 
     hdp_cfg = cfg.get("hdp") or {}
     target = hdp_cfg.get("target", "nexau")
     fake = float(((cfg.get("run") or {}).get("smoke") or {}).get("fake_reward", 1.0))
+    guard_cfg = hdp_cfg.get("guard") or {}
+    guard_engine = guard_cfg.get("engine", guard.DEFAULT_ENGINE)  # reconcile | atomic
+    guard_mode = guard_cfg.get("mode", "enforce")                 # enforce | review (atomic only)
 
     workdir = Path(workdir)
     work_doc = workdir / "doc.hdp"
@@ -93,7 +96,8 @@ def evolve(cfg: dict, *, proposer: Proposer, workdir: Path | str, dry_run: bool 
         old = _snapshot(doc, it_dir / "pre.hdp")
         manifest = proposer(doc, {"pass_rate": ev.pass_rate, "iteration": it}, it)
         new = load(doc.path)
-        reconciled, report = guard.enforce(old, new, manifest)
+        reconciled, report = guard.govern(old, new, manifest,
+                                           engine=guard_engine, mode=guard_mode)
         save(reconciled)
         tr = track.record(reconciled, manifest, do_commit=False)
         doc = load(doc.path)
