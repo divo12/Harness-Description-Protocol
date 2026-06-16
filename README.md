@@ -82,8 +82,12 @@ That's it. The next section runs **without** any keys.
 Run these in order; none of them spends money or touches the network.
 
 ```bash
-# 1. run the test suite (fast, deterministic) — expect "70 passed"
+# 1. run the test suite (fast, deterministic) — expect "71 passed"
 uv run python -m pytest hdp/engine/tests -q
+
+# 1b. lint + type-check the HDP package (both clean)
+uv run ruff check hdp/ ahe_control/
+uv run mypy hdp
 
 # 2. end-to-end wiring check on a tiny slice → prints a 2-arm A/B table with fake numbers
 ./scripts/hdp.sh smoke --dry-run
@@ -163,23 +167,42 @@ You only ever edit **`configs/hdp/master.yaml`**. It inherits the repo's base co
 
 ## Repository layout
 
+HDP (the protocol + engine) is the main package. The original AHE control loop lives in its own
+`ahe_control/` package so it can be run on demand as the A/B **control** arm; the HDP engine reaches
+into it only at four narrow seams (`from ahe_control.evolve import …`) — a clean one-way edge.
+
 ```
-hdp/
+hdp/                       ← THE protocol + engine (the heavy part of the repo)
   SPEC.md                  the protocol (ETCLOVG layers, operators, manifests, safety rules)
   schema/                  JSON Schemas (source of truth for the typed model)
   validator/               reference validator (the policy the guard reuses)
   examples/                a worked HDP document (the AHE seed agent)
   engine/
     core/                  typed model, loader, component differ
-    adapters/              FrameworkAdapter seam + nexau adapter
+    adapters/              FrameworkAdapter seam + nexau adapter (+ verbatim seed assets)
     gen/  lift/            document ⇄ harness
     guard/                 the edit gateway — two engines (see below)
     track/  attest/        version control + verdict reconciliation
     loop.py propose.py eval.py bench/      the evolve loop + A/B
     run.py                 master entry point (lift|gen|evolve|bench|smoke)
   STATUS.md                live implementation status
-scripts/hdp.sh             thin wrapper around run.py
-configs/hdp/master.yaml    the one file you edit to launch the engine
+
+ahe_control/               ← AHE control loop, run on demand (the A/B control arm)
+  evolve.py                the evolve→eval→improve orchestrator (harbor + ADB)
+  trace_converter.py       trace normalization
+
+agents/                    shared NexAU agents (code_agent_simple, evolve_agent, explore_agent)
+configs/                   shared configs (base.yaml + experiments/ + hdp/)
+scripts/hdp.sh             thin wrapper around hdp/engine/run.py
+```
+
+### Running the AHE control baseline
+
+The HDP treatment loop runs via `./scripts/hdp.sh evolve …`. To run the **control** arm (plain AHE
+editing the NexAU files directly) on the same task/iters:
+
+```bash
+uv run python -m ahe_control.evolve --config configs/experiments/exp-control-overfull.yaml
 ```
 
 ### The two guard engines
@@ -196,9 +219,9 @@ Both are exposed through `guard.govern(old, new, manifest, engine=...)`.
 
 ## Current status & known gaps
 
-Phases 0–5 are implemented and the **dry-run / test paths are fully green** (70 tests pass,
-smoke produces the 2-arm table). The following are **not yet complete** — none of them crashes
-the `evolve` path, but they limit what you can claim:
+Phases 0–5 are implemented and the **dry-run / test paths are fully green** (71 tests pass,
+`ruff` + `mypy hdp` clean, smoke produces the 2-arm table). The following are **not yet complete** —
+none of them crashes the `evolve` path, but they limit what you can claim:
 
 1. **Phase 4 — auto-rollback missing.** `attest` can label a regressive edit `harmful`, but there
    is no `track.rollback()` and the loop does not auto-revert it. The version-history *query* API
