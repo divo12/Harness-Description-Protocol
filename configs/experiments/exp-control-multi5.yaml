@@ -1,0 +1,31 @@
+# Control arm (AHE on NexAU files) — same 5 mixed-difficulty tasks, k=2.
+_base: ./exp-simple-code-gpt54.yaml
+_name: control-multi5
+_description: "Control (AHE) — 5 mixed-difficulty tasks, k=2."
+
+path: ./dataset/tb2-flat
+task_names: [fix-git, cobol-modernization, gcode-to-text, cancel-async-tasks, write-compressor]
+max_iterations: 1
+target_pass_rate: 1.01
+
+harbor:
+  k: 2
+  n_concurrent: 5
+
+evolve_agent:
+  llm_config:
+    reasoning:
+      effort: "low"
+    timeout: 600
+
+agent_debugger:
+  enabled: true
+  max_concurrent: 2
+  max_tasks: 5
+  timeout_per_task: 240
+  retry_attempts: 3
+explore_agent:
+  enabled: false
+notify:
+  enabled: false
+feishu_webhook: "https://placeholder.invalid"

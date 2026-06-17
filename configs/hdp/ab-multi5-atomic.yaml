@@ -1,0 +1,6 @@
+_base: ./ab-multi5.yaml
+_name: hdp-ab-multi5-atomic
+_description: "HDP treatment (atomic) — 5 mixed-difficulty tasks, k=2."
+hdp:
+  guard:
+    engine: atomic
