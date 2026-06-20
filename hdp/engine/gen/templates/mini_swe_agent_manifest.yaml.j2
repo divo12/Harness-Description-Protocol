@@ -1,0 +1,36 @@
+agent:
+{% if system_template is not none %}
+  system_template: |
+{{ system_template | yaml_block(4) }}
+{% endif %}
+{% if instance_template is not none %}
+  instance_template: |
+{{ instance_template | yaml_block(4) }}
+{% endif %}
+  step_limit: {{ step_limit }}
+  cost_limit: {{ cost_limit }}
+environment:
+  cwd: "/testbed"
+  timeout: 60
+  interpreter: ["bash", "-c"]
+  env:
+    PAGER: cat
+    MANPAGER: cat
+    LESS: -R
+    PIP_PROGRESS_BAR: "off"
+    TQDM_DISABLE: "1"
+    BASH_ENV: /root/.bashrc
+  environment_class: docker
+model:
+{% if observation_template is not none %}
+  observation_template: |
+{{ observation_template | yaml_block(4) }}
+{% endif %}
+{% if format_error_template is not none %}
+  format_error_template: |
+{{ format_error_template | yaml_block(4) }}
+{% endif %}
+  model_name: "anthropic/claude-sonnet-4-5-20250929"
+  model_kwargs:
+    drop_params: true
+    parallel_tool_calls: true

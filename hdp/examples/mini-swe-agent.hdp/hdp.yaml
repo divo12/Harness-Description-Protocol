@@ -1,0 +1,51 @@
+hdp: '0.1'
+meta:
+  id: mini-swe-agent
+  version: 1.0.0
+  base_model: anthropic/claude-sonnet-4-5-20250929
+  targets:
+    - mini-swe-agent
+layers:
+  context:
+    - id: system-template
+      type: system_rules
+      file: ./context/system-template.md
+    - id: instance-template
+      type: system_rules
+      file: ./context/instance-template.md
+    - id: observation-template
+      type: system_rules
+      file: ./context/observation-template.md
+    - id: format-error-template
+      type: system_rules
+      file: ./context/format-error-template.md
+  tooling:
+    - id: bash
+      type: tool
+      name: bash
+      description: Execute a bash command in the environment; the agent's only tool.
+      blast_radius: system
+      implementation:
+        kind: adapter
+        binding: minisweagent.environments.local:LocalEnvironment
+  lifecycle:
+    - id: main-loop
+      type: loop
+      max_iterations: 250
+      params:
+        cost_limit: 3.0
+governance:
+  blast_radius: system
+  evolution:
+    editable:
+      - context
+      - tooling
+      - lifecycle
+    read_only:
+      - verification
+      - governance
+      - execution
+    protected:
+      - system-template
+  audit:
+    log_all_tool_calls: true

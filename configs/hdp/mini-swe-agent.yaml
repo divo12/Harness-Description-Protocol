@@ -1,0 +1,9 @@
+# HDP backend overlay — run the engine against the mini-SWE-agent backend instead of NexAU.
+# Switching backend is a one-key change: only `hdp.target` (+ its document/harness) differ from
+# master.yaml. The loop, guard, track, attest, and bench are unchanged and run identically.
+_base: ./master.yaml
+
+hdp:
+  target: mini-swe-agent
+  document: hdp/examples/mini-swe-agent.hdp   # source-of-truth HDP doc (gen input)
+  harness: agents/mini_swe_agent              # backend reference seed (lift input)

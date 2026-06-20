@@ -20,6 +20,9 @@ def _adapter_for(target: str):
 
     if target == "nexau":
         return NexAUAdapter()
+    if target == "mini-swe-agent":
+        from hdp.engine.adapters.mini_swe_agent import MiniSweAgentAdapter
+        return MiniSweAgentAdapter()
     raise ValueError(f"no generator for target '{target}'")
 
 
