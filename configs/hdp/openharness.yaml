@@ -1,0 +1,9 @@
+# HDP backend overlay — run the engine against the OpenHarness backend instead of NexAU.
+# Switching backend is a one-key change: only `hdp.target` (+ its document/harness) differ from
+# master.yaml. The loop, guard, track, attest, and bench are unchanged and run identically.
+_base: ./master.yaml
+
+hdp:
+  target: openharness
+  document: hdp/examples/openharness.hdp   # source-of-truth HDP doc (gen input)
+  harness: agents/openharness              # backend reference seed (lift input)

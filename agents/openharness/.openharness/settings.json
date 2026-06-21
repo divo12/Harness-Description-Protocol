@@ -1,0 +1,30 @@
+{
+  "model": "gpt-5.2",
+  "provider": "openai",
+  "max_turns": 250,
+  "system_prompt": "You are OpenHarness, an open-source coding agent. Work on the task in the current directory by issuing tools. Be precise and verify your changes before finishing.",
+  "permission": {
+    "mode": "default",
+    "allowed_tools": ["bash", "read_file", "write_file"],
+    "denied_tools": ["network_request"],
+    "denied_commands": ["rm -rf /", "curl", "wget"],
+    "path_rules": {
+      "deny_read": ["~/.ssh", "~/.aws"],
+      "deny_write": ["~/.ssh"]
+    }
+  },
+  "sandbox": {
+    "enabled": true,
+    "backend": "docker",
+    "network": {
+      "allowed_domains": [],
+      "denied_domains": ["*"]
+    },
+    "filesystem": {
+      "allow_read": ["/testbed"],
+      "deny_read": [],
+      "allow_write": ["/testbed"],
+      "deny_write": []
+    }
+  }
+}

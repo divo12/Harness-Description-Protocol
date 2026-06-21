@@ -23,6 +23,9 @@ def _adapter_for(target: str):
     if target == "mini-swe-agent":
         from hdp.engine.adapters.mini_swe_agent import MiniSweAgentAdapter
         return MiniSweAgentAdapter()
+    if target == "openharness":
+        from hdp.engine.adapters.openharness import OpenHarnessAdapter
+        return OpenHarnessAdapter()
     raise ValueError(f"no generator for target '{target}'")
 
 
