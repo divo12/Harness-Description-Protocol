@@ -1,0 +1,84 @@
+hdp: '0.1'
+meta:
+  id: openharness
+  version: 1.0.0
+  base_model: gpt-5.2
+  targets:
+    - openharness
+layers:
+  context:
+    - id: system-prompt
+      type: system_rules
+      file: ./context/system-prompt.md
+    - id: project-instructions
+      type: system_rules
+      file: ./context/project-instructions.md
+  tooling:
+    - id: bash
+      type: tool
+      name: bash
+      description: OpenHarness 'bash' tool (allowed by permission policy).
+      blast_radius: system
+    - id: read-file
+      type: tool
+      name: read_file
+      description: OpenHarness 'read_file' tool (allowed by permission policy).
+      blast_radius: session
+    - id: write-file
+      type: tool
+      name: write_file
+      description: OpenHarness 'write_file' tool (allowed by permission policy).
+      blast_radius: system
+  execution:
+    - id: sandbox
+      type: sandbox
+      description: OpenHarness sandbox + permission confinement (non-widening).
+      blast_radius: system
+      params:
+        sandbox:
+          enabled: true
+          backend: docker
+          network:
+            allowed_domains: []
+            denied_domains:
+              - '*'
+          filesystem:
+            allow_read:
+              - /testbed
+            deny_read: []
+            allow_write:
+              - /testbed
+            deny_write: []
+        permission:
+          denied_tools:
+            - network_request
+          denied_commands:
+            - rm -rf /
+            - curl
+            - wget
+          path_rules:
+            deny_read:
+              - ~/.ssh
+              - ~/.aws
+            deny_write:
+              - ~/.ssh
+  lifecycle:
+    - id: main-loop
+      type: loop
+      max_iterations: 250
+governance:
+  blast_radius: system
+  evolution:
+    editable:
+      - context
+      - tooling
+      - lifecycle
+    read_only:
+      - verification
+      - governance
+      - execution
+    protected:
+      - system-prompt
+      - sandbox
+  audit:
+    log_all_tool_calls: true

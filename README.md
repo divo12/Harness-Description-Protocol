@@ -51,9 +51,8 @@ One iteration = **gen → eval → attest → propose → guard → track**, all
 
 ## Prerequisites
 
-- **Python ≥ 3.13**
-- **[uv](https://github.com/astral-sh/uv)** (package manager)
-- **tmux** (used by the underlying AHE harness runner)
+- **Python ≥ 3.13** (the only hard requirement)
+- **tmux** (used by the underlying AHE harness runner; `setup.py` installs it best-effort)
 - For **real** evaluations only: an LLM endpoint + an [E2B](https://e2b.dev) key (see `.env` below).
   Everything else runs **for $0**.
 
@@ -61,11 +60,31 @@ One iteration = **gen → eval → attest → propose → guard → track**, all
 
 ## Setup (once)
 
-```bash
-# 1. install dependencies
-uv sync
+**Recommended — `setup.py` (from scratch; works on a bare env, e.g. a Lightning AI Studio).**
+Run it with a **Python 3.13+** interpreter; it installs *every* dependency the repo needs (the PyPI
+deps, the two git deps `nexau`/`harbor`, the in-repo `agent_debugger_core`, the `claude-agent-sdk`
+constraint, plus `pytest`), then installs this repo as an editable package and verifies the imports.
+No `uv` required.
 
-# 2. create your .env (real runs only — dry-run/tests need nothing here)
+```bash
+# bootstraps pip if missing, then installs everything into the active interpreter's environment
+python setup.py                 # full install (runtime + dev/test + project)
+# python setup.py --no-dev      # skip ruff/mypy/pytest/codegen
+# python setup.py --no-project  # install deps only
+```
+
+On Lightning AI: open a Studio on a **3.13+** environment, `git clone` this repo, then run
+`python setup.py` in its terminal — that interpreter's env is where everything lands.
+
+**Alternative — `uv` (if you already use it):**
+
+```bash
+uv sync
+```
+
+**Then (real runs only) create your `.env`** — dry-run/tests need nothing here:
+
+```bash
 cat > .env <<'EOF'
 LLM_API_KEY=sk-...           # your model API key
 LLM_BASE_URL=https://.../v1/ # OpenAI-compatible base URL
@@ -73,7 +92,8 @@ E2B_API_KEY=e2b_...          # sandbox provider key
 EOF
 ```
 
-That's it. The next section runs **without** any keys.
+That's it. The next section runs **without** any keys. (If you used `setup.py`, drop the `uv run`
+prefix from the commands below — the packages are already in your active environment.)
 
 ---
 
