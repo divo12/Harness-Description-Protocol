@@ -33,7 +33,7 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent
-MIN_PYTHON = (3, 13)
+MIN_PYTHON = (3, 12)  # the engine uses nothing newer than StrEnum (3.11+); 3.12 runs it fine
 
 # --------------------------------------------------------------------------- #
 #  The complete dependency set (single source of truth — keep in sync with pyproject.toml).
@@ -98,8 +98,8 @@ def _check_python() -> None:
         sys.exit(
             f"ERROR: Python >= {MIN_PYTHON[0]}.{MIN_PYTHON[1]} is required, but this interpreter is "
             f"{sys.version.split()[0]} ({sys.executable}).\n"
-            "On Lightning AI, select a 3.13+ environment (or create one) and re-run with that "
-            "interpreter, e.g.  python3.13 setup.py"
+            f"On Lightning AI, select a {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+ environment and re-run with "
+            f"that interpreter, e.g.  python{MIN_PYTHON[0]}.{MIN_PYTHON[1]} setup.py"
         )
     _log(f"Python {sys.version.split()[0]} at {sys.executable} (OK)")
 
@@ -138,6 +138,21 @@ def _write_constraints() -> Path:
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write("\n".join(CONSTRAINTS) + "\n")
     return Path(name)
+
+
+def _install_project(constraints: Path) -> None:
+    """Editable-install this repo so `hdp` / `ahe_control` import from anywhere. If an editable
+    build is refused (e.g. a stricter requires-python somewhere in the chain), fall back to a
+    `.pth` file pointing at the repo root — imports still work either way."""
+    _log("Installing this repository as an editable package (no extra deps)")
+    try:
+        _pip("-e", ".", "--no-deps", constraints=constraints)
+        return
+    except subprocess.CalledProcessError:
+        import sysconfig
+        pth = Path(sysconfig.get_path("purelib")) / "ahe_repo.pth"
+        pth.write_text(str(REPO) + "\n", encoding="utf-8")
+        print(f"    editable build refused; wrote {pth} -> {REPO} instead")
 
 
 def _verify_imports() -> None:
@@ -185,8 +200,7 @@ def bootstrap(argv: list[str]) -> int:
         _log("Skipping dev/test deps (--no-dev)")
 
     if install_project:
-        _log("Installing this repository as an editable package (no extra deps)")
-        _pip("-e", ".", "--no-deps", constraints=constraints)
+        _install_project(constraints)
     else:
         _log("Skipping editable project install (--no-project)")
 
