@@ -7,6 +7,14 @@ agent:
   instance_template: |
 {{ instance_template | yaml_block(4) }}
 {% endif %}
+{% if observation_template is not none %}
+  observation_template: |
+{{ observation_template | yaml_block(4) }}
+{% endif %}
+{% if format_error_template is not none %}
+  format_error_template: |
+{{ format_error_template | yaml_block(4) }}
+{% endif %}
   step_limit: {{ step_limit }}
   cost_limit: {{ cost_limit }}
 environment:
@@ -22,14 +30,6 @@ environment:
     BASH_ENV: /root/.bashrc
   environment_class: docker
 model:
-{% if observation_template is not none %}
-  observation_template: |
-{{ observation_template | yaml_block(4) }}
-{% endif %}
-{% if format_error_template is not none %}
-  format_error_template: |
-{{ format_error_template | yaml_block(4) }}
-{% endif %}
   model_name: "anthropic/claude-sonnet-4-5-20250929"
   model_kwargs:
     drop_params: true

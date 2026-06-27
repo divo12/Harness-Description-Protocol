@@ -23,8 +23,8 @@ into the gen template exactly as NexAU bakes ``llm_config``.
   ├───────────────────────────────────┼──────────────────────────┼───────────┼──────────────┤
   │ agent.system_template             │ system_rules             │ context   │ embedded     │
   │ agent.instance_template           │ system_rules             │ context   │ embedded     │
-  │ model.observation_template        │ system_rules             │ context   │ embedded     │
-  │ model.format_error_template       │ system_rules             │ context   │ embedded     │
+  │ agent.observation_template        │ system_rules             │ context   │ embedded     │
+  │ agent.format_error_template       │ system_rules             │ context   │ embedded     │
   │ bash action (env.execute)         │ tool (id=bash)           │ tooling   │ ref binding  │
   │ agent.step_limit                  │ lifecycle.loop.max_iter  │ lifecycle │ manifest     │
   │ agent.{cost_limit, …residual}     │ lifecycle.loop.params    │ lifecycle │ manifest     │
@@ -133,8 +133,8 @@ _DEFAULT_MODEL = "anthropic/claude-sonnet-4-5-20250929"
 _PROMPT_FIELDS: list[tuple[str, str, str]] = [
     ("system-template", "agent", "system_template"),
     ("instance-template", "agent", "instance_template"),
-    ("observation-template", "model", "observation_template"),
-    ("format-error-template", "model", "format_error_template"),
+    ("observation-template", "agent", "observation_template"),
+    ("format-error-template", "agent", "format_error_template"),
 ]
 
 # The single bash tool's `ref` binding → asset files (relative to mini_swe_agent_assets/) that

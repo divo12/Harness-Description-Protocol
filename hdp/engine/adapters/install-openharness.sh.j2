@@ -1,0 +1,22 @@
+#!/bin/bash
+set -euo pipefail
+
+# Build prerequisites + git (some task images are minimal).
+apt-get update
+apt-get install -y curl build-essential git
+
+# Install uv (provides an isolated, image-python-independent toolchain).
+curl -LsSf https://astral.sh/uv/0.7.13/install.sh | sh
+if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$HOME/.bashrc"; then
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.bashrc"
+fi
+source "$HOME/.local/bin/env"
+
+# Install the OpenHarness CLI (`oh`) as an isolated uv tool.
+{% if version %}
+uv tool install "openharness-ai=={{ version }}"
+{% else %}
+uv tool install openharness-ai
+{% endif %}
+
+echo "INSTALL_SUCCESS"

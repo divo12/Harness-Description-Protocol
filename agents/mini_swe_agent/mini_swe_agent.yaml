@@ -112,22 +112,6 @@ agent:
   step_limit: 250
   cost_limit: 3.
 
-environment:
-  cwd: "/testbed"
-  timeout: 60
-  interpreter: ["bash", "-c"]
-  env:
-    PAGER: cat
-    MANPAGER: cat
-    LESS: -R
-    PIP_PROGRESS_BAR: "off"
-    TQDM_DISABLE: "1"
-    # bash -c is non-login so it won't source ~/.bashrc; point BASH_ENV at it so the
-    # image's `conda activate testbed` runs (else commands use the base env, no testbed).
-    BASH_ENV: /root/.bashrc
-  environment_class: docker
-
-model:
   observation_template: |
     {% if output.exception_info -%}
     <exception>{{output.exception_info}}</exception>
@@ -177,6 +161,22 @@ model:
     If you have completed your assignment, please consult the first message about how to
     submit your solution (you will not be able to continue working on this task after that).
     {%- endif %}
+environment:
+  cwd: "/testbed"
+  timeout: 60
+  interpreter: ["bash", "-c"]
+  env:
+    PAGER: cat
+    MANPAGER: cat
+    LESS: -R
+    PIP_PROGRESS_BAR: "off"
+    TQDM_DISABLE: "1"
+    # bash -c is non-login so it won't source ~/.bashrc; point BASH_ENV at it so the
+    # image's `conda activate testbed` runs (else commands use the base env, no testbed).
+    BASH_ENV: /root/.bashrc
+  environment_class: docker
+
+model:
   model_name: "anthropic/claude-sonnet-4-5-20250929"
   model_kwargs:
     drop_params: true
