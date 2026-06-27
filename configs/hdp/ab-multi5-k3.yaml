@@ -1,0 +1,6 @@
+# Same 5 mixed-difficulty tasks at k=3 (smooths k=2 rollout noise; check reconcile tracks control).
+_base: ./ab-multi5.yaml
+_name: hdp-ab-multi5-k3-reconcile
+harbor:
+  k: 3
+  n_concurrent: 6        # templates cached -> 3 arms x 6 = 18 concurrent, under E2B's ~20 cap

@@ -1,0 +1,8 @@
+# Re-run ONLY the 7 control tasks whose k=2 had an infra-unscored rollout, at the bumped 5400s
+# sandbox timeout. Agent-timeout fails (e.g. mcmc-sampling-stan) are NOT here — they stay as 0.
+_base: ./exp-control-tb2-k2.yaml
+_name: control-tb2-k2-rerun
+task_names: [dna-assembly, filter-js-from-html, fix-ocaml-gc, install-windows-3.11, raman-fitting, regex-chess, train-fasttext]
+harbor:
+  k: 2
+  n_concurrent: 10

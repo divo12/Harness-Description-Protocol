@@ -1,0 +1,29 @@
+# Full TB2 (89 tasks) at k=2 — TREATMENT (reconcile). Generated harness == control's agent.
+_base: ../experiments/exp-simple-code-gpt54.yaml
+_name: hdp-ab-tb2-k2-reconcile
+_description: "HDP treatment (reconcile) — full TB2 (89 tasks), k=2."
+hdp:
+  enabled: true
+  document: hdp/examples/code-agent-simple.hdp
+  harness: agents/code_agent_simple
+  target: nexau
+  guard:
+    engine: reconcile
+path: ./dataset/tb2-flat          # no task_names -> all 89 tasks
+harbor:
+  k: 2
+  n_concurrent: 15
+run:
+  arm: treatment
+  seed: 0
+  smoke:
+    enabled: true
+    max_iterations: 1
+    dry_run: false
+    fake_reward: 0.0
+agent_debugger:
+  enabled: false
+explore_agent:
+  enabled: false
+notify:
+  enabled: false

@@ -1,0 +1,5 @@
+_base: ./ab-tb2-k2.yaml
+_name: hdp-ab-tb2-k2-atomic
+hdp:
+  guard:
+    engine: atomic

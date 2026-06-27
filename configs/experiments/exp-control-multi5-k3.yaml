@@ -1,0 +1,5 @@
+_base: ./exp-control-multi5.yaml
+_name: control-multi5-k3
+harbor:
+  k: 3
+  n_concurrent: 6

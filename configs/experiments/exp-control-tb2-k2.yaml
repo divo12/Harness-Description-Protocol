@@ -1,0 +1,17 @@
+# Full Terminal-Bench 2 (all 89 tasks) at k=2 — CONTROL arm (AHE on NexAU files).
+_base: ./exp-simple-code-gpt54.yaml
+_name: control-tb2-k2
+_description: "Control (AHE) — full TB2 (89 tasks), k=2, pure benchmark."
+path: ./dataset/tb2-flat          # no task_names -> all 89 tasks
+max_iterations: 1
+target_pass_rate: 1.01
+harbor:
+  k: 2
+  n_concurrent: 15                # baseline proved 16 single-arm clean (with builds); 15 = margin
+explore_agent:
+  enabled: false
+agent_debugger:
+  enabled: false                  # pure benchmark; no evolution evidence needed at 1 iteration
+notify:
+  enabled: false
+feishu_webhook: "https://placeholder.invalid"
