@@ -30,6 +30,17 @@ _SETTINGS_MARKER = "HDP_OPENHARNESS_SETTINGS_EOF"
 # `oh` already runs *inside* the E2B sandbox; its own sandbox section would try to nest a container.
 _DROP_SETTINGS_KEYS = ("sandbox",)
 
+# Injected via --append-system-prompt so the model never pauses to ask for confirmation.
+_HEADLESS_SYSTEM_PROMPT = (
+    "You are running fully headless — there is NO human available to respond. "
+    "NEVER ask for confirmation, permission, or user input of any kind. "
+    "NEVER say 'please confirm', 'is it OK', 'should I', or similar. "
+    "Always install required tools and packages and proceed immediately. "
+    "When installing Python packages use `python3 -m pip install <pkg> --break-system-packages` "
+    "so they are available to all processes in this environment. "
+    "Complete the task autonomously without any human interaction."
+)
+
 
 class OpenHarnessHDP(BaseInstalledAgent):
     """Runs the OpenHarness ``oh`` CLI headless on a task, applying the HDP-generated config."""
@@ -41,12 +52,14 @@ class OpenHarnessHDP(BaseInstalledAgent):
         version: str | None = None,
         config_dir: str | None = None,
         max_turns: int = 100,
+        effort: str = "xhigh",
         *args: object,
         **kwargs: object,
     ) -> None:
         super().__init__(logs_dir, prompt_template_path, version, *args, **kwargs)
         self._config_dir = config_dir
         self._max_turns = int(max_turns)
+        self._effort = effort
 
     @staticmethod
     def name() -> str:
@@ -92,10 +105,13 @@ class OpenHarnessHDP(BaseInstalledAgent):
         }
 
         setup, settings_flag = self._settings_setup()
+        effort_flag = f"--effort {shlex.quote(self._effort)} " if self._effort else ""
+        headless_flag = f"--append-system-prompt {shlex.quote(_HEADLESS_SYSTEM_PROMPT)} "
         run = (
             f"oh -p {shlex.quote(instruction)} --base-url \"$OPENAI_BASE_URL\" --api-format openai "
-            f"-m {model} {settings_flag}--dangerously-skip-permissions "
+            f"-m {model} {effort_flag}{settings_flag}--dangerously-skip-permissions "
             f"--max-turns {self._max_turns} --output-format text "
+            f"{headless_flag}"
             # `</dev/null` keeps oh headless; tee captures the final answer to the agent log.
             f"</dev/null 2>&1 | tee /logs/agent/openharness.txt"
         )

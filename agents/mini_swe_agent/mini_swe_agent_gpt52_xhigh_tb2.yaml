@@ -1,0 +1,96 @@
+agent:
+  system_template: |
+    You are a helpful assistant that can interact with a computer shell to solve tasks.
+  instance_template: |
+    <task>
+    {{task}}
+    </task>
+
+    <instructions>
+    # Task Instructions
+
+    ## Overview
+
+    You're a software engineer interacting with a computer shell. Complete the task described above.
+    The working environment is already set up — files and dependencies may already be present.
+
+    For each response:
+
+    1. Include a THOUGHT section explaining your reasoning and what you're trying to accomplish
+    2. Provide one or more bash tool calls to execute
+
+    ## Important
+
+    - Work in whatever directory the task requires (check with `pwd` and `ls` first)
+    - Actually run your code — do not just write files without executing them
+    - Install any missing dependencies and proceed without asking for confirmation
+    - When installing Python packages, use `python3 -m pip install <pkg> --break-system-packages`
+    - Verify your solution works before finishing
+
+    ## Command Execution Rules
+
+    1. You issue at least one command per response
+    2. The system executes the command(s) in a subshell
+    3. You see the result(s)
+    4. You write your next command(s)
+
+    Each response MUST include AT LEAST ONE bash tool call.
+
+    Directory or environment variable changes are not persistent between responses.
+    Prefix commands with `cd /path && ...` as needed.
+
+    ## Completion
+
+    When you've finished, output exactly:
+    ```
+    TASK_COMPLETE
+    ```
+
+    Do NOT create a git patch. Do NOT run git diff. Just complete the task and output TASK_COMPLETE.
+    </instructions>
+  step_limit: 250
+  cost_limit: 20.0
+
+  observation_template: |
+    {% if output.exception_info -%}
+    <exception>{{output.exception_info}}</exception>
+    {% endif -%}
+    <returncode>{{output.returncode}}</returncode>
+    {% if output.output | length < 10000 -%}
+    <output>
+    {{ output.output -}}
+    </output>
+    {%- else -%}
+    <warning>
+    The output of your last command was too long. Use head/tail/grep to get less output.
+    </warning>
+    {%- set elided_chars = output.output | length - 10000 -%}
+    <output_head>{{ output.output[:5000] }}</output_head>
+    <elided_chars>{{ elided_chars }} characters elided</elided_chars>
+    <output_tail>{{ output.output[-5000:] }}</output_tail>
+    {%- endif -%}
+  format_error_template: |
+    {% if finish_reason is defined and finish_reason in ["length", "tool_calls"] -%}
+    Your previous response reached the output token limit before a tool call. Respond more concisely.
+    {%- else -%}
+    Tool call error: <error>{{error}}</error>
+    Every response needs at least one bash tool call.
+    {%- endif %}
+environment:
+  cwd: "/app"
+  timeout: 60
+  interpreter: ["bash", "-c"]
+  env:
+    PAGER: cat
+    MANPAGER: cat
+    LESS: -R
+    PIP_PROGRESS_BAR: "off"
+    TQDM_DISABLE: "1"
+    BASH_ENV: /root/.bashrc
+  environment_class: docker
+
+model:
+  model_name: "openai/gpt-5.2"
+  model_kwargs:
+    reasoning_effort: "xhigh"
+    drop_params: true
