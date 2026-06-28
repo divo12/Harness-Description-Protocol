@@ -171,6 +171,10 @@ class MiniSweAgentE2BLocal(MiniSweAgent):
                 "instance_template": _E2B_MINI_INSTANCE_TEMPLATE,
                 "step_limit": 250,
                 "cost_limit": 20.0,
+                # Harbor hard-cancels the trial at 900 s. Have mini self-exit cleanly
+                # (TimeExceeded) just below that so we still capture a trajectory + reward
+                # instead of losing the trial to an AgentTimeoutError.
+                "wall_time_limit_seconds": 840,
             },
             "environment": {
                 "environment_class": (
@@ -245,7 +249,14 @@ class MiniSweAgentE2BLocal(MiniSweAgent):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
         )
-        stdout_bytes, _ = await proc.communicate()
+        try:
+            stdout_bytes, _ = await proc.communicate()
+        except BaseException:
+            # Harbor cancels this coroutine when its 900 s agent timeout fires. Kill the
+            # mini subprocess so it doesn't leak as an orphan that keeps burning API budget
+            # against a sandbox harbor has already torn down.
+            proc.kill()
+            raise
         output_text = stdout_bytes.decode("utf-8", errors="replace")
 
         (command_dir / "stdout.txt").write_text(output_text)
