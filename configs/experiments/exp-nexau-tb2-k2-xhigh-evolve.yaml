@@ -1,0 +1,29 @@
+# AHE evolution loop on nexau — FULL TB2 (89 tasks), k=2, gpt-5.2 xhigh, 3 iterations.
+# Real evaluate -> analyze (ADB) -> improve (evolve_agent) loop, NOT a benchmark.
+# Inherits exp-simple-code-gpt54.yaml -> base.yaml, which already enable agent_debugger +
+# explore_agent + evolve_agent and use the full harbor dataset terminal-bench@2.0 (all 89 tasks).
+# Run on Lightning: uv run python -m ahe_control.evolve --config configs/experiments/exp-nexau-tb2-k2-xhigh-evolve.yaml
+_base: ./exp-simple-code-gpt54.yaml
+_name: nexau-tb2-k2-xhigh-evolve
+_description: "AHE evolution on nexau — full TB2 (89 tasks), k=2, gpt-5.2 xhigh, up to 100 iterations, target 0.95 (ADB analyze + evolve)."
+
+# full TB2 via inherited dataset: terminal-bench@2.0 (no task_names => all 89 tasks)
+max_iterations: 100
+target_pass_rate: 0.95          # stop when reached; otherwise run up to 100 iterations
+
+harbor:
+  k: 2
+  n_concurrent: 15
+
+# Match the 75.3% baseline conditions: gpt-5.2 xhigh on the agent being evolved.
+code_agent_patch:
+  tool_call_mode: openai
+  llm_config:
+    api_type: openai_responses
+    reasoning:
+      effort: "xhigh"
+      summary: "detailed"
+
+notify:
+  enabled: false
+feishu_webhook: "https://placeholder.invalid"

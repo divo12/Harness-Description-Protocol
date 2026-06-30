@@ -4,14 +4,14 @@ All runs: full TB2 dataset (89 tasks), gpt-5.2 (Azure), k=2 (pass@1 = task passe
 
 ## Results
 
-| Agent | Effort | pass@1 | Tasks | Date |
-|-------|--------|--------|-------|------|
-| nexau (AHE harness, AHE control loop) | high | **49.4%** (44/89) | 89 | 2026-06-28 |
-| nexau (direct harbor, no AHE) | high | **42.0%** (37/88†) | 88† | 2026-06-28 |
-| nexau (direct harbor, no AHE) | xhigh | **75.3%** (67/89) | 89 | 2026-06-28 |
-| mini-swe-agent (E2BLocal, nexau-style) | xhigh | **48.3%** (43/89) | 89 | 2026-06-29 |
-| openharness (evolved harness, full tool set) | xhigh | **28.1%** (25/89) | 89 | 2026-06-29 |
-| openharness (baseline, stock oh) | xhigh | ~28%† (18/64 trials) | 89† | 2026-06-29 |
+| Agent | Effort | pass@1 | Tasks | Date | Run dir (Lightning `runs/`) |
+|-------|--------|--------|-------|------|------------------------------|
+| nexau (AHE harness, AHE control loop) | high | **49.4%** (44/89) | 89 | 2026-06-28 | — |
+| nexau (direct harbor, no AHE) | high | **42.0%** (37/88†) | 88† | 2026-06-28 | — |
+| nexau (direct harbor, no AHE) | xhigh | **75.3%** (67/89) | 89 | 2026-06-28 | `nexau-xhigh-20260628_143415` |
+| mini-swe-agent (E2BLocal, nexau-style) | xhigh | **48.3%** (43/89) | 89 | 2026-06-29 | `mini-swe-e2blocal-xhigh-20260628_225102` (+ `…-retry-20260629_104145`) |
+| openharness (evolved harness, full tool set) | xhigh | **28.1%** (25/89) | 89 | 2026-06-29 | `openharness-evolved-xhigh-20260629_131951` |
+| openharness (baseline, stock oh) | xhigh | ~28%† (18/64 trials) | 89† | 2026-06-29 | `openharness-baseline-xhigh-20260629_124223` (killed) |
 
 † One task was still running when the run was aborted. The openharness *baseline* run was killed at 64/178 trials (18 PASS → ~28% trial-level); never completed, shown for context only.
 
