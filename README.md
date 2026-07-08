@@ -1,6 +1,6 @@
-# HDP — Harness Definition Protocol & Engine
+# HDP — Harness Definition Protocol
 
-<img width="2752" height="1536" alt="WhatsApp Image 2026-06-16 at 14 44 27" src="https://github.com/user-attachments/assets/4ee91745-dff3-4fc1-abad-88f68f8b3f4b" />
+<img width="879" height="503" alt="image" src="https://github.com/user-attachments/assets/ac0b3a95-59ad-473b-a4c9-1c74d107b1ab" />
 
 
 > A typed, version-controlled, **governed** way to evolve a coding agent's *harness*
