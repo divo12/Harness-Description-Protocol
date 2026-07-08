@@ -235,21 +235,62 @@ class MiniSweAgentAdapter(FrameworkAdapter):
                 return f"{section}.{key}"
         return cid
 
-    def _reject_unsupported(self, doc: HDPDoc) -> None:
-        """Fail loud on components this adapter cannot faithfully produce (no silent skip).
-        Same v1 conformance rejections as the NexAU adapter."""
-        for _layer, comp in doc.components():
+    def capability_issues(self, doc: HDPDoc):
+        """Enumerate every component mini-SWE-agent's ``generate`` cannot faithfully represent,
+        without raising. Order: policy/verifier blocking first (document order), then unresolvable
+        bindings, then the silent drop of any ``system_rules`` id with no manifest slot."""
+        from hdp.engine.port.coverage import CapabilityIssue
+
+        issues: list[CapabilityIssue] = []
+
+        # (1) blocking — the v1 conformance rejections (byte-identical messages to the raises).
+        for layer, comp in doc.components():
             t = comp.type.value
             if t == "verifier" and comp.trigger and comp.trigger.value != "external":
-                raise NotImplementedError(
+                issues.append(CapabilityIssue(
+                    comp.id, layer, t, "blocking",
                     f"verifier '{comp.id}' trigger={comp.trigger.value}: only external "
-                    "verifiers (handled by the eval harness) are supported in v1"
-                )
-            if t == "policy":
-                raise NotImplementedError(
+                    "verifiers (handled by the eval harness) are supported in v1"))
+            elif t == "policy":
+                issues.append(CapabilityIssue(
+                    comp.id, layer, t, "blocking",
                     f"policy component '{comp.id}': in-harness policy enforcement is not "
-                    "wired in v1"
-                )
+                    "wired in v1"))
+
+        # (2) blocking — an adapter-bound tool whose binding this target library cannot resolve.
+        for layer, comp in doc.components():
+            if comp.type.value != "tool":
+                continue
+            impl = comp.implementation
+            if impl is None or impl.kind.value != "adapter":
+                continue
+            if impl.binding not in _BINDING_ASSETS:
+                issues.append(CapabilityIssue(
+                    comp.id, layer, "tool", "blocking",
+                    f"mini-SWE-agent adapter cannot resolve ref binding '{impl.binding}' "
+                    f"(known: {sorted(_BINDING_ASSETS)})"))
+
+        # (3) silent_drop — a system_rules component whose id is not one of the manifest's four
+        #     prompt slots is read into `prompts` but never rendered (its content lands nowhere).
+        known = {cid for cid, _s, _k in _PROMPT_FIELDS}
+        for layer, comp in doc.components():
+            if comp.type.value == "system_rules" and comp.file and comp.id not in known:
+                issues.append(CapabilityIssue(
+                    comp.id, layer, "system_rules", "silent_drop",
+                    f"mini-SWE-agent has no manifest slot for system_rules id '{comp.id}' "
+                    f"(known: {sorted(known)}); its content is dropped"))
+
+        return issues
+
+    def _reject_unsupported(self, doc: HDPDoc) -> None:
+        """Fail loud on components this adapter cannot faithfully produce (no silent skip).
+
+        Routes through :meth:`capability_issues` (single source of truth) but raises only the
+        policy/verifier-category blocking issues — an unresolvable tool binding stays the
+        ``ValueError`` that :meth:`_resolve_binding` raises during ``generate`` (unchanged)."""
+        for issue in self.capability_issues(doc):
+            if issue.severity == "blocking" and issue.type in ("policy", "verifier"):
+                raise NotImplementedError(issue.reason)
 
     def _resolve_binding(self, binding: str | None, out_dir: Path) -> None:
         assets = _BINDING_ASSETS.get(binding or "")

@@ -1,0 +1,16 @@
+# HDP port overlay — port a harness across backends and emit the honest coverage report.
+# Mirrors configs/hdp/openharness.yaml's `_base: ./master.yaml` pattern: only the `hdp.port`
+# block differs. Scope is nexau <-> mini-swe-agent (openharness is excluded from the port infra).
+#
+# Note on this concrete example: the real NexAU seed's shell tool binding is not resolvable by
+# mini-SWE-agent, so this port's honest outcome is a *blocking* report (the tool binding gap plus
+# the system-rules-core silent drop) and `hdp port` exits 1 — which is exactly what the port audit
+# exists to surface. Set `allow_partial: true` only to see generate()'s downstream binding error.
+_base: ./master.yaml
+
+hdp:
+  port:
+    harness: agents/code_agent_simple   # source backend harness (lift input)
+    source_target: nexau                # lift with this adapter
+    dest_target: mini-swe-agent         # generate + audit against this adapter
+    allow_partial: false                # refuse (with the issue list) on any blocking gap

@@ -1,6 +1,6 @@
 """hdp.engine.run — master entry point for the HDP engine.
 
-Sub-commands:  lift | gen | evolve | bench | smoke
+Sub-commands:  lift | gen | port | evolve | bench | smoke
 
 Driven by a master config (configs/hdp/master.yaml) that reuses the repo's existing
 ``_base:`` overlay + ``${ENV}`` substitution via :func:`evolve.load_config`. Every
@@ -140,6 +140,42 @@ def cmd_gen(cfg: dict) -> int:
     return 0
 
 
+def cmd_port(cfg: dict) -> int:
+    """Real cross-backend port: source harness -> HDP -> destination harness, with the honest
+    coverage report written beside it. Refuses (prints the issue list) on a blocking gap."""
+    from hdp.engine.port import PortCoverageError
+    from hdp.engine.port import port as port_harness
+
+    hdp_cfg = cfg.get("hdp") or {}
+    port_cfg = hdp_cfg.get("port") or {}
+    harness_path = port_cfg.get("harness", hdp_cfg.get("harness", "agents/code_agent_simple"))
+    source_target = port_cfg.get("source_target", "nexau")
+    dest_target = port_cfg.get("dest_target", "mini-swe-agent")
+    allow_partial = bool(port_cfg.get("allow_partial", False))
+    arm = (cfg.get("run") or {}).get("arm", "treatment")
+    seed = int((cfg.get("run") or {}).get("seed", 0))
+
+    with Run(_run_id(arm, _timestamp()), arm, seed=seed, config=cfg) as run:
+        run.set_phase("port")
+        out = run.dir / "ported"
+        try:
+            result = port_harness(
+                harness_path, out, source_target=source_target, dest_target=dest_target,
+                allow_partial=allow_partial,
+            )
+        except PortCoverageError as e:
+            run.log("port_blocked", len(e.report.blocking), phase="port")
+            print(f"\nREFUSED: {e}")
+            for i in e.report.issues:
+                print(f"  {i.severity:<12} {i.component_id:<24} {i.reason}")
+            return 1
+        run.log("port_issues_found", len(result.coverage.issues), phase="port",
+                component_id=result.hdp_doc.model.meta.id)
+        print(f"\nported {source_target} -> {dest_target} "
+              f"({len(result.coverage.issues)} coverage issue(s)) -> {result.harness_dir}")
+    return 0
+
+
 def cmd_evolve(cfg: dict, dry_run: bool, *, proposer=None, eval_fn=None) -> int:
     """Drive the real treatment-arm evolve loop (hdp.engine.loop) end to end.
 
@@ -176,7 +212,7 @@ def cmd_evolve(cfg: dict, dry_run: bool, *, proposer=None, eval_fn=None) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="hdp.engine.run", description=__doc__)
     parser.add_argument(
-        "command", choices=["lift", "gen", "evolve", "bench", "smoke"],
+        "command", choices=["lift", "gen", "port", "evolve", "bench", "smoke"],
     )
     parser.add_argument("--config", default=DEFAULT_CONFIG)
     parser.add_argument("--smoke", action="store_true",
@@ -194,6 +230,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_lift(cfg)
     if args.command == "gen":
         return cmd_gen(cfg)
+    if args.command == "port":
+        return cmd_port(cfg)
     if args.command == "evolve":
         return cmd_evolve(cfg, dry_run)
     if args.command == "bench":
