@@ -8,13 +8,24 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from hdp.engine.core.loader import HDPDoc
+
+if TYPE_CHECKING:
+    from hdp.engine.port.coverage import CapabilityIssue
 
 
 class FrameworkAdapter(ABC):
     #: backend identifier, matched against meta.targets (e.g. "nexau")
     target: str
+
+    def capability_issues(self, doc: HDPDoc) -> list[CapabilityIssue]:
+        """Enumerate every component this adapter cannot faithfully represent in *doc* —
+        unsupported types, unrecognized id-keyed slots, destination collisions, unresolvable
+        bindings — without raising. Default: no adapter-specific knowledge; each concrete adapter
+        overrides. Consumed by :func:`hdp.engine.port.audit` (never raises here)."""
+        return []
 
     @abstractmethod
     def generate(self, doc: HDPDoc, out_dir: Path) -> Path:

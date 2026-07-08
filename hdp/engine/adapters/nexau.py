@@ -208,20 +208,68 @@ class NexAUAdapter(FrameworkAdapter):
         return out_dir
 
     # -- helpers ----------------------------------------------------------------
-    def _reject_unsupported(self, doc: HDPDoc) -> None:
-        """Fail loud on components this adapter cannot faithfully produce (no silent skip)."""
-        for _layer, comp in doc.components():
+    def capability_issues(self, doc: HDPDoc):
+        """Enumerate every component NexAU's ``generate`` cannot faithfully represent, without
+        raising. Order matters: policy/verifier blocking first (in document order) so
+        :meth:`_reject_unsupported` raises the same message it always has, then unresolvable
+        bindings, then destination collisions."""
+        from hdp.engine.port.coverage import CapabilityIssue
+
+        issues: list[CapabilityIssue] = []
+
+        # (1) blocking — the v1 conformance rejections (byte-identical messages to the raises).
+        for layer, comp in doc.components():
             t = comp.type.value
             if t == "verifier" and comp.trigger and comp.trigger.value != "external":
-                raise NotImplementedError(
+                issues.append(CapabilityIssue(
+                    comp.id, layer, t, "blocking",
                     f"verifier '{comp.id}' trigger={comp.trigger.value}: only external "
-                    "verifiers (handled by the eval harness) are supported in v1"
-                )
-            if t == "policy":
-                raise NotImplementedError(
+                    "verifiers (handled by the eval harness) are supported in v1"))
+            elif t == "policy":
+                issues.append(CapabilityIssue(
+                    comp.id, layer, t, "blocking",
                     f"policy component '{comp.id}': in-harness policy enforcement is not "
-                    "wired in v1"
-                )
+                    "wired in v1"))
+
+        # (2) blocking — an adapter-bound tool whose binding this target library cannot resolve.
+        for layer, comp in doc.components():
+            if comp.type.value != "tool":
+                continue
+            impl = comp.implementation
+            if impl is None or impl.kind.value != "adapter":
+                continue
+            if impl.binding not in _BINDING_ASSETS:
+                issues.append(CapabilityIssue(
+                    comp.id, layer, "tool", "blocking",
+                    f"NexAU adapter cannot resolve ref binding '{impl.binding}' "
+                    f"(known: {sorted(_BINDING_ASSETS)})"))
+
+        # (3) collision — embedded components NexAU maps to the same destination file (last wins).
+        seen: dict[str, str] = {}  # dest -> first component id that claimed it
+        for layer, comp in doc.components():
+            if not comp.file or comp.type.value not in ("system_rules", "memory", "tool", "skill"):
+                continue
+            dest = self._embedded_dest(layer, comp)
+            if dest in seen:
+                issues.append(CapabilityIssue(
+                    comp.id, layer, comp.type.value, "collision",
+                    f"NexAU maps this to '{dest}', already claimed by component "
+                    f"'{seen[dest]}'; only one survives"))
+            else:
+                seen[dest] = comp.id
+
+        return issues
+
+    def _reject_unsupported(self, doc: HDPDoc) -> None:
+        """Fail loud on components this adapter cannot faithfully produce (no silent skip).
+
+        Routes through :meth:`capability_issues` for a single source of truth, but raises only the
+        policy/verifier-category blocking issues — an unresolvable tool binding is a blocking issue
+        for the *port* audit, yet ``generate`` must keep raising it as the ``ValueError`` from
+        :meth:`_resolve_binding` (unchanged for every existing caller)."""
+        for issue in self.capability_issues(doc):
+            if issue.severity == "blocking" and issue.type in ("policy", "verifier"):
+                raise NotImplementedError(issue.reason)
 
     def _resolve_binding(self, binding: str | None, out_dir: Path) -> None:
         assets = _BINDING_ASSETS.get(binding or "")

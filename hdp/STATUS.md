@@ -13,6 +13,7 @@
 | 3 — guard | `guard` (see note) | ✅ |
 | 4 — track + attest | `track` (manifest/semver/commit/record), `attest` (verdicts) | ✅ |
 | 5 — bench | `loop`, `propose`, `eval`, `bench`, `run evolve` | ✅ |
+| 6 — port | `port` (audit + cross-backend port; nexau ↔ mini-swe-agent), `adapters.*.capability_issues` | ✅ |
 
 **Verification:** 67 tests pass; `./scripts/hdp.sh smoke --dry-run` green (2-arm A/B table);
 all phase modules import; guard CLI works.
