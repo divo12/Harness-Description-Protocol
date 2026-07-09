@@ -57,6 +57,13 @@ from pathlib import Path
 from typing import Any
 
 from hdp.engine.adapters.base import FrameworkAdapter
+from hdp.engine.adapters.uncertain import (
+    Uncertain,
+    finalize,
+    iter_uncertain,
+    refine_prompt,
+    resolved,
+)
 from hdp.engine.core.loader import HDPDoc
 from hdp.engine.core.models import Component
 
@@ -91,7 +98,8 @@ def _slug(s: str | None) -> str:
     return s or "x"
 
 
-def _infer_blast_radius(name: str | None, binding: str | None, is_read_only: bool | None) -> str:
+def _infer_blast_radius(name: str | None, binding: str | None,
+                        is_read_only: bool | None) -> str | Uncertain:
     if is_read_only:
         return "read_only"
     blob = f"{name or ''} {binding or ''}".lower()
@@ -101,7 +109,11 @@ def _infer_blast_radius(name: str | None, binding: str | None, is_read_only: boo
         return "system"
     if any(tok in blob for tok in _DESTRUCTIVE_TOKENS):
         return "system"
-    return "session"  # conservative default; the LLM pass refines when uncertain
+    # No read-only signal and no token match: the blast radius is a guess. Mark it uncertain
+    # (heuristic mode collapses this back to "session"; llm_assisted resolves it).
+    return Uncertain(default="session",
+                     reason=f"blast_radius not inferable from tool name/binding ({name!r})",
+                     candidates=tuple(_BLAST_ORDER))
 
 
 def _max_blast(a: str, b: str) -> str:
@@ -358,11 +370,11 @@ class OpenHarnessAdapter(FrameworkAdapter):
         for name, is_ro, binding in self._enumerate_tools(permission):
             cid = _slug(name)
             blast = _infer_blast_radius(name, binding, is_ro)
-            max_tool_blast = _max_blast(max_tool_blast, blast)
+            max_tool_blast = _max_blast(max_tool_blast, resolved(blast))  # ceiling: conservative
             comp: dict = {
                 "id": cid, "type": "tool", "name": name,
                 "description": f"OpenHarness '{name}' tool (allowed by permission policy).",
-                "blast_radius": blast,
+                "blast_radius": blast,          # may be an Uncertain sentinel
             }
             if binding:
                 comp["implementation"] = {"kind": "adapter", "binding": binding}
@@ -422,8 +434,12 @@ class OpenHarnessAdapter(FrameworkAdapter):
         }
         _prune_none(doc_dict)
 
+        # Optional LLM pass resolves only the uncertainty sentinels the mapper emitted; every
+        # remaining sentinel then collapses to its conservative default. In heuristic mode (llm
+        # is None) _llm_refine is skipped and finalize restores today's output byte-for-byte.
         if llm is not None:
             doc_dict = self._llm_refine(doc_dict, harness_dir, llm)
+        finalize(doc_dict)
 
         # MUST validate against the typed model before writing (SPEC conformance).
         HDPManifest.model_validate(doc_dict)
@@ -456,6 +472,38 @@ class OpenHarnessAdapter(FrameworkAdapter):
         return [(name, None, None) for name in (permission.get("allowed_tools") or [])]
 
     def _llm_refine(self, doc_dict: dict, harness_dir: Path, llm) -> dict:
-        """Extension point: ask an LLM to fill ambiguous fields. The deterministic mapping already
-        handles OpenHarness seeds, so this is a no-op unless wired."""
+        """Resolve each ``Uncertain`` sentinel the heuristic mapper left (e.g. an uncertain
+        blast_radius) by asking the LLM one focused question. An answer outside the field's
+        candidate set is rejected and the sentinel is left for ``finalize`` to collapse to its
+        conservative default — the LLM never widens scope. (Uniform across adapters.)"""
+        for container, key, unc in list(iter_uncertain(doc_dict)):
+            answer = (llm(refine_prompt(str(key), unc)) or "").strip()
+            if answer and (not unc.candidates or answer in unc.candidates):
+                container[key] = answer
         return doc_dict
+
+    def agentic_lift(
+        self,
+        harness_dir: Path,
+        out_dir: Path,
+        llm: Callable[[str], str],
+        *,
+        meta_id: str | None = None,
+        version: str = "1.0.0",
+        base_model: str | None = None,
+    ) -> HDPDoc:
+        """Agentic strategy: for a harness the heuristic mapper doesn't recognize, let the LLM
+        read the repo broadly and propose the HDP document directly. The proposal MUST validate
+        against the typed model before writing — an invalid proposal raises, never coerced."""
+        from hdp.engine.adapters.agentic import build_agentic_prompt, parse_agentic_doc
+        from hdp.engine.core.loader import HDPManifest, load
+
+        harness_dir = Path(harness_dir).resolve()
+        out_dir = Path(out_dir).resolve()
+        prompt = build_agentic_prompt(harness_dir, self.target, meta_id, version, base_model)
+        doc_dict = parse_agentic_doc(llm(prompt))
+
+        HDPManifest.model_validate(doc_dict)  # raise on an invalid agentic proposal
+        out_dir.mkdir(parents=True, exist_ok=True)
+        _write_yaml(out_dir / "hdp.yaml", doc_dict)
+        return load(out_dir)
