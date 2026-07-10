@@ -1,0 +1,3 @@
+# Cached red-team candidate fixtures (`<doc_id>_candidates.json`) live here.
+# None are checked in yet — generate one with `python -m hdp.redteam.regen`.
+# The default pytest run replays a fixture if present and skips otherwise (never a live call).
