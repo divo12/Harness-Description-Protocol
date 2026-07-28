@@ -17,8 +17,41 @@ the guard's policy logic.
   doctored on-disk copy and replays it through `govern`).
 - `report.py` — `CandidateOutcome`, `RedTeamReport` (with the `.bypasses` view) and
   `render_markdown(report)`.
+- `triage.py` — code-aware security triage (see below).
 - `regen.py` — the only path that calls a live LLM (see below).
 - `fixtures/` — cached `<doc_id>_candidates.json` inputs; the default test suite reads these.
+
+## Code-aware triage (`triage.py`)
+
+The pitch: HDP's typed structure lets a reviewer localize the small fraction of a harness worth
+reading the actual code of, instead of auditing the whole codebase.
+
+- `triage_components(doc, llm)` → one `TriageResult` per component; the LLM shortlists those
+  worth code-level review, judging **primarily by `blast_radius`** and whether the component
+  references executable code (governance tier is a secondary signal). It may legitimately
+  shortlist **zero** components for a genuinely low-risk harness.
+- `resolve_source(doc, component_id)` → the component's **actual backend source**, read-only.
+  Executable code (an `implementation`/`ref` binding) is preferred over an embedded descriptor
+  `file:`; a component with only a `file:` (e.g. context system_rules) resolves to that content.
+  Returns `None` when nothing is resolvable (a name-only tool, or a builtin with no
+  user-authored code). **Source is never executed.**
+- `code_aware_redteam(doc, llm)` → runs triage, resolves source for the shortlisted components,
+  and reasons over schema + code together to produce Stage-2 `EditCandidate` proposals (which
+  chain straight into `run_candidates`). Two LLM calls: triage, then generation.
+
+Resolution notes: known bindings are resolved via the target adapter's checked-in
+`_BINDING_ASSETS` map (deterministic); `nexau.*` dotted imports are best-effort against the
+gitignored `.code_sources/` tree (returns `None` if absent, never relied on in tests);
+`tools.*` adapter bindings resolve under `agents/code_agent_simple/`.
+
+### Coverage-completeness caveat (important)
+
+This tool can only ever see components that **`lift` captured**. If `lift` silently dropped or
+misrepresented a component, the triage inherits that blind spot — a clean triage is **not** a
+certification of safety, only "these components are worth a closer human look." It is not a
+substitute for a full manual security audit, and `resolve_source` honestly returns `None` for a
+component whose source it cannot resolve rather than fabricating coverage (e.g. the openharness
+example's name-only tools).
 
 ## `$0` by default
 

@@ -7,6 +7,13 @@ surfaced finding, never a change to the guard.
 """
 from hdp.redteam.llm_gen import EditCandidate, propose_candidates, run_candidates
 from hdp.redteam.report import CandidateOutcome, RedTeamReport, render_markdown
+from hdp.redteam.triage import (
+    CodeAwareReport,
+    TriageResult,
+    code_aware_redteam,
+    resolve_source,
+    triage_components,
+)
 
 __all__ = [
     "EditCandidate",
@@ -15,4 +22,9 @@ __all__ = [
     "propose_candidates",
     "run_candidates",
     "render_markdown",
+    "TriageResult",
+    "CodeAwareReport",
+    "triage_components",
+    "resolve_source",
+    "code_aware_redteam",
 ]
