@@ -53,6 +53,30 @@ substitute for a full manual security audit, and `resolve_source` honestly retur
 component whose source it cannot resolve rather than fabricating coverage (e.g. the openharness
 example's name-only tools).
 
+## Guard measurement against a real evolve run (`evolve_replay.py`)
+
+Where Stage 2 generates adversarial edits, this measures the guard against the **genuine** edit
+stream of a completed AHE evolve run (`hdp.engine.loop.evolve`), and reports allow/deny **split
+separately by tier**.
+
+- `load_evolve_run(run_dir)` → `list[EvolveEditRecord]`, reading the loop's on-disk shape:
+  `iter-NNN/pre.hdp` (old), `iter-NNN/post.hdp` (raw proposed new), and per-iteration manifests
+  under `doc.hdp/evolution/manifests/`. `post.hdp` is snapshotted **only in
+  `guard_interaction="monitor"` mode**, so only a monitor-mode run is replayable — the loader
+  **fails loud** if `post.hdp` is missing rather than silently guessing.
+- `measure_guard_against_run(records)` → `GuardMeasurementReport`, replaying each
+  `(old, new, manifest)` through `guard.govern` under **both engines**. The tier split
+  (CORE/STRUCTURAL/SOFT) comes from the atomic engine's tiered PDP; the reconcile engine
+  contributes per-delta allow/deny counts. `render_measurement_markdown(report)` labels the
+  **CORE-denial rate and SOFT-denial rate as distinct figures** — a CORE denial is an attempted
+  confinement breach; a SOFT denial is typically manifest/editability hygiene. They are never
+  blended into one "% unsafe".
+
+Why replay snapshots instead of trusting the run's logged `guard_audit.jsonl` verdicts: a run
+logs verdicts under whatever engine it used, and the **reconcile engine records no tier**. Re-
+running each edit through the tiered atomic PDP re-derives the CORE/SOFT split regardless of the
+run's engine. This stage involves no LLM at all — it purely replays existing edit records.
+
 ## `$0` by default
 
 No test in the default `pytest` run ever makes a live LLM call:

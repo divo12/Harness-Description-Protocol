@@ -5,8 +5,19 @@ LLM that *proposes* candidate HDP-document edits, then replays every candidate t
 ``guard.govern`` under both engines and both modes. Detect-and-report only: a slip-through is a
 surfaced finding, never a change to the guard.
 """
+from hdp.redteam.evolve_replay import (
+    EvolveEditRecord,
+    load_evolve_run,
+    measure_guard_against_run,
+)
 from hdp.redteam.llm_gen import EditCandidate, propose_candidates, run_candidates
-from hdp.redteam.report import CandidateOutcome, RedTeamReport, render_markdown
+from hdp.redteam.report import (
+    CandidateOutcome,
+    GuardMeasurementReport,
+    RedTeamReport,
+    render_markdown,
+    render_measurement_markdown,
+)
 from hdp.redteam.triage import (
     CodeAwareReport,
     TriageResult,
@@ -27,4 +38,9 @@ __all__ = [
     "triage_components",
     "resolve_source",
     "code_aware_redteam",
+    "EvolveEditRecord",
+    "GuardMeasurementReport",
+    "load_evolve_run",
+    "measure_guard_against_run",
+    "render_measurement_markdown",
 ]
