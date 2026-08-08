@@ -14,6 +14,11 @@ hdp:
   guard:                                         # which edit-governance engine the loop uses
     engine: reconcile                            # reconcile (per-delta rollback) | atomic (all-or-nothing tiered)
     mode: enforce                                # enforce | review  (atomic engine only)
+    # interaction: enforce                       # enforce (revert denied edits) | monitor (log verdict, keep the edit)
+    # warn_and_retry: false                      # on a denial, re-invoke the proposer once with a warning (default OFF)
+    # warn_and_retry_max_attempts: 1             # retry cap when warn_and_retry is on
+  # track:
+  #   commit: false                              # per-iteration git commit of the document (free git log/diff history)
 
 # Run scope: identifies the run, the arm, and the smoke slice.
 run:

@@ -17,15 +17,20 @@ retargeted at the doc dir) drops in unchanged. The eval function is likewise inj
 from __future__ import annotations
 
 import shutil
+import sys
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from tqdm import tqdm
+
 from hdp.engine import attest, guard, track
 from hdp.engine.core.loader import HDPDoc, load, save
 from hdp.engine.eval import EvalResult, eval_harness
 from hdp.engine.gen import generate
+from hdp.engine.loop_logging import _log_iteration, append_guard_audit, setup_evolve_logger
 
 
 class Proposer(Protocol):
@@ -69,6 +74,19 @@ def _snapshot(doc: HDPDoc, dest: Path) -> HDPDoc:
         shutil.rmtree(dest)
     shutil.copytree(doc.path, dest)
     return load(dest)
+
+
+def _restore(dst: Path, src: Path) -> None:
+    """Byte-copy the doc tree at *src* over *dst* (used to reinstate a snapshot on disk)."""
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(src, dst)
+
+
+def _warn_text(report) -> str:
+    """A warning the proposer sees on a warn-and-retry: which of its edits the guard flagged."""
+    return "GUARD FLAGGED your edit; revise it:\n" + "\n".join(
+        f"- {d.component_id} ({d.layer}): {d.reason}" for d in report.denied)
 
 
 def _attestation_summary(manifest: dict, ares) -> str:
@@ -120,8 +138,14 @@ def _failure_evidence(cfg: dict, ev: EvalResult, it_dir: Path, it: int, dry_run:
 
 
 def evolve(cfg: dict, *, proposer: Proposer, workdir: Path | str, dry_run: bool = True,
-           max_iterations: int = 2, eval_fn: EvalFn = eval_harness,
-           run=None) -> list[IterationResult]:
+           max_iterations: int = 2, eval_fn: EvalFn = eval_harness, run=None,
+           log_dir: Path | None = None,
+           show_progress: bool = True,
+           do_commit: bool | None = None,
+           guard_interaction: str | None = None,
+           warn_and_retry: bool | None = None,
+           warn_and_retry_max_attempts: int | None = None,
+           ) -> list[IterationResult]:
     """Run the treatment-arm evolve loop on a working copy of the configured HDP document."""
     hdp_cfg = cfg.get("hdp") or {}
     target = hdp_cfg.get("target", "nexau")
@@ -130,6 +154,21 @@ def evolve(cfg: dict, *, proposer: Proposer, workdir: Path | str, dry_run: bool 
     guard_engine = guard_cfg.get("engine", guard.DEFAULT_ENGINE)  # reconcile | atomic
     guard_mode = guard_cfg.get("mode", "enforce")                 # enforce | review (atomic only)
 
+    # New loop options: config-driven (cfg["hdp"]["guard"|"track"][...]) with a kwarg override,
+    # matching how guard_engine/guard_mode above are resolved. Defaults reproduce today exactly.
+    track_cfg = hdp_cfg.get("track") or {}
+    if do_commit is None:
+        do_commit = bool(track_cfg.get("commit", False))
+    if guard_interaction is None:
+        guard_interaction = guard_cfg.get("interaction", "enforce")  # enforce | monitor
+    if warn_and_retry is None:
+        warn_and_retry = bool(guard_cfg.get("warn_and_retry", False))
+    if warn_and_retry_max_attempts is None:
+        warn_and_retry_max_attempts = int(guard_cfg.get("warn_and_retry_max_attempts", 1))
+    if guard_interaction not in ("enforce", "monitor"):  # fail loud, never silently fall back
+        raise ValueError(
+            f"guard_interaction must be 'enforce' or 'monitor', got {guard_interaction!r}")
+
     workdir = Path(workdir)
     work_doc = workdir / "doc.hdp"
     if work_doc.exists():
@@ -137,11 +176,19 @@ def evolve(cfg: dict, *, proposer: Proposer, workdir: Path | str, dry_run: bool 
     shutil.copytree(hdp_cfg["document"], work_doc)
     doc = load(work_doc)
 
+    log_dir = Path(log_dir) if log_dir is not None else workdir
+    logger = setup_evolve_logger(log_dir)
+    audit_path = log_dir / "guard_audit.jsonl"
+    cum_denied = 0
+    bar = tqdm(total=max_iterations, desc="evolve") if (show_progress and sys.stderr.isatty()) \
+        else None
+
     results: list[IterationResult] = []
     prev_manifest: dict | None = None
     prev_tasks: dict = {}
 
     for it in range(1, max_iterations + 1):
+        t0 = time.monotonic()
         it_dir = workdir / f"iter-{it:03d}"
         generate(doc, it_dir / "harness", target=target)
         if not dry_run:  # apply the same inference overlay control uses, so the agents match
@@ -161,14 +208,37 @@ def evolve(cfg: dict, *, proposer: Proposer, workdir: Path | str, dry_run: bool 
         # improving blind. Live only (needs real traces); reuses evolve.py's ADB phase.
         evidence.update(_failure_evidence(cfg, ev, it_dir, it, dry_run))
 
-        # Propose (free-edit the doc), then govern the edit.
+        # Propose (free-edit the doc), then govern the edit. govern() mutates the on-disk working
+        # doc during reconciliation, so `monitor` mode snapshots the proposer's edit *before*
+        # governing and restores it afterward. warn-and-retry (default OFF) re-invokes the
+        # proposer on a denial with a warning appended to its evidence; every attempt is audited.
         old = _snapshot(doc, it_dir / "pre.hdp")
-        manifest = proposer(doc, evidence, it)
-        new = load(doc.path)
-        reconciled, report = guard.govern(old, new, manifest,
-                                           engine=guard_engine, mode=guard_mode)
-        save(reconciled)
-        tr = track.record(reconciled, manifest, do_commit=False)
+        attempt = 0
+        while True:
+            manifest = proposer(doc, evidence, it)
+            new = load(doc.path)
+            proposed = _snapshot(new, it_dir / "post.hdp") if guard_interaction == "monitor" \
+                else None
+            reconciled, report = guard.govern(old, new, manifest,
+                                               engine=guard_engine, mode=guard_mode)
+            append_guard_audit(audit_path, iteration=it, report=report,
+                               engine=guard_engine, mode=guard_mode, attempt=attempt)
+            if warn_and_retry and report.denied and attempt < warn_and_retry_max_attempts:
+                attempt += 1
+                evidence = {**evidence, "guard_warning": _warn_text(report)}
+                _restore(work_doc, old.path)  # clean pre-edit base for the retry
+                doc = load(work_doc)
+                continue
+            break
+
+        if guard_interaction == "monitor":  # keep the proposer's unaltered edit, denials and all
+            _restore(work_doc, proposed.path)
+            forward = load(work_doc)
+        else:                               # enforce: today's behavior, byte-for-byte
+            save(reconciled)
+            forward = reconciled
+
+        tr = track.record(forward, manifest, do_commit=do_commit)
         doc = load(doc.path)
 
         if run is not None:
@@ -176,8 +246,14 @@ def evolve(cfg: dict, *, proposer: Proposer, workdir: Path | str, dry_run: bool 
             run.log("guard_denied", len(report.denied), phase="evolve", iteration=it)
             run.log("version_bumped", 1, phase="evolve", iteration=it)
 
+        cum_denied += len(report.denied)
+        _log_iteration(logger, bar, it, ev.pass_rate, report, tr.version,
+                       time.monotonic() - t0, cum_denied)
+
         results.append(IterationResult(it, ev.pass_rate, tr.version,
                                        len(report.denied), manifest))
         prev_manifest, prev_tasks = manifest, ev.task_results
 
+    if bar is not None:
+        bar.close()
     return results

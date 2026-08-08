@@ -23,11 +23,21 @@ from jinja2 import Environment, FileSystemLoader
 from ruamel.yaml import YAML
 
 from hdp.engine.adapters.base import FrameworkAdapter
+from hdp.engine.adapters.uncertain import (
+    Uncertain,
+    finalize,
+    iter_uncertain,
+    refine_prompt,
+    resolved,
+)
 from hdp.engine.core.loader import HDPDoc
 from hdp.engine.core.models import Component
 
 _BLAST_ORDER = ["read_only", "local", "session", "system", "external"]
 _SHELL_TOKENS = ("shell", "bash", "exec", "command", "terminal", "subprocess")
+_HOOK_KINDS = ("contract_injection", "skill_retrieval", "action_validation",
+               "trajectory_regulation", "before_model", "after_model",
+               "before_tool", "after_tool")
 
 
 def _slug(s: str | None) -> str:
@@ -48,11 +58,15 @@ def _has_env(s: str) -> bool:
     return "${" in s
 
 
-def _infer_blast_radius(name: str | None, binding: str | None) -> str:
+def _infer_blast_radius(name: str | None, binding: str | None) -> str | Uncertain:
     blob = f"{name or ''} {binding or ''}".lower()
     if any(tok in blob for tok in _SHELL_TOKENS):
         return "system"
-    return "session"  # conservative default; the LLM pass refines when uncertain
+    # Nothing in the name/binding signals a blast radius: mark it uncertain (heuristic mode
+    # collapses this back to "session"; llm_assisted resolves it).
+    return Uncertain(default="session",
+                     reason=f"blast_radius not inferable from tool name/binding ({name!r})",
+                     candidates=tuple(_BLAST_ORDER))
 
 
 def _max_blast(a: str, b: str) -> str:
@@ -331,8 +345,8 @@ class NexAUAdapter(FrameworkAdapter):
                     if isinstance(desc, str):
                         comp["description"] = _one_line(desc)
             blast = _infer_blast_radius(name, entry.get("binding"))
-            comp["blast_radius"] = blast
-            max_blast = _max_blast(max_blast, blast)
+            comp["blast_radius"] = blast          # may be an Uncertain sentinel
+            max_blast = _max_blast(max_blast, resolved(blast))  # ceiling uses the conservative value
             if entry.get("binding"):
                 comp["implementation"] = {"kind": "adapter", "binding": entry["binding"]}
             tooling.append(comp)
@@ -347,10 +361,16 @@ class NexAUAdapter(FrameworkAdapter):
         }]
         for idx, mw in enumerate(cfg.get("middlewares") or []):
             imp = mw.get("import")
+            # An undeclared hook is a guess-point (mapper has no confident signal): emit the
+            # same sentinel. Heuristic mode collapses it to "before_tool"; llm_assisted classifies.
+            hook = mw["hook"] if "hook" in mw else Uncertain(
+                default="before_tool",
+                reason=f"middleware hook not declared for {imp or f'middleware-{idx}'}",
+                candidates=_HOOK_KINDS)
             lifecycle.append({
                 "id": _slug(imp.split(":")[-1]) if imp else f"middleware-{idx}",
                 "type": "middleware",
-                "hook": mw.get("hook", "before_tool"),  # ambiguous-layer: LLM refines
+                "hook": hook,
                 "impl": {"kind": "builtin", "import": imp} if imp else {"kind": "builtin"},
             })
         layers["lifecycle"] = lifecycle
@@ -393,9 +413,12 @@ class NexAUAdapter(FrameworkAdapter):
         }
         _prune_none(doc_dict)
 
-        # Optional LLM pass fills only what structure can't give; validated below.
+        # Optional LLM pass resolves only the uncertainty sentinels the mapper emitted; every
+        # remaining sentinel then collapses to its conservative default. In heuristic mode (llm
+        # is None) _llm_refine is skipped and finalize restores today's output byte-for-byte.
         if llm is not None:
             doc_dict = self._llm_refine(doc_dict, harness_dir, llm)
+        finalize(doc_dict)
 
         # MUST validate against the typed model before writing (SPEC conformance).
         from hdp.engine.core.loader import HDPManifest
@@ -406,7 +429,38 @@ class NexAUAdapter(FrameworkAdapter):
         return load(out_dir)
 
     def _llm_refine(self, doc_dict: dict, harness_dir: Path, llm) -> dict:
-        """Extension point: ask an LLM to fill ambiguous fields (e.g. uncertain
-        blast_radius, middleware hook classification). Deterministic mapping already
-        handles NexAU seeds, so this is a no-op unless a refinement contract is wired."""
+        """Resolve each ``Uncertain`` sentinel the heuristic mapper left (e.g. uncertain
+        blast_radius, middleware hook classification) by asking the LLM one focused question.
+        An answer outside the field's candidate set is rejected and the sentinel is left for
+        ``finalize`` to collapse to its conservative default — the LLM never widens scope."""
+        for container, key, unc in list(iter_uncertain(doc_dict)):
+            answer = (llm(refine_prompt(str(key), unc)) or "").strip()
+            if answer and (not unc.candidates or answer in unc.candidates):
+                container[key] = answer
         return doc_dict
+
+    def agentic_lift(
+        self,
+        harness_dir: Path,
+        out_dir: Path,
+        llm: Callable[[str], str],
+        *,
+        meta_id: str | None = None,
+        version: str = "1.0.0",
+        base_model: str | None = "gpt-5.2",
+    ) -> HDPDoc:
+        """Agentic strategy: for a harness the heuristic mapper doesn't recognize, let the LLM
+        read the repo broadly and propose the HDP document directly. The proposal MUST validate
+        against the typed model before writing — an invalid proposal raises, never coerced."""
+        from hdp.engine.adapters.agentic import build_agentic_prompt, parse_agentic_doc
+        from hdp.engine.core.loader import HDPManifest, load
+
+        harness_dir = Path(harness_dir).resolve()
+        out_dir = Path(out_dir).resolve()
+        prompt = build_agentic_prompt(harness_dir, self.target, meta_id, version, base_model)
+        doc_dict = parse_agentic_doc(llm(prompt))
+
+        HDPManifest.model_validate(doc_dict)  # raise on an invalid agentic proposal
+        out_dir.mkdir(parents=True, exist_ok=True)
+        _write_yaml(out_dir / "hdp.yaml", doc_dict)
+        return load(out_dir)
